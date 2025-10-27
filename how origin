@@ -1,0 +1,10 @@
+[33m9efaead[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mv2020.01[m[33m, [m[1;31morigin/v2020.01[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add SFTP config and setup guide for BeagleBone development
+[33mf056170[m[33m ([m[1;33mtag: [m[1;33m2020-04-06[m[33m)[m Merge pull request #31 from RobertCNelson/buster-iot-tidl-fixes
+[33m68703b4[m tidl: Makefile: copy "Remove usage of VPE in running TIDL examples"
+[33m6f4aa11[m tidl: Makefile: nuke /tmp/cloud9-examples/classification.tidl.so on clean
+[33m3af1554[m common/Makefile: enable -fPIC for buster
+[33m984afa1[m AI/TIDL: get rid of constexpr
+[33m95cb32a[m AI/TIDL: try to cast return in constexpr to int
+[33maa916cf[m Try using C++14
+[33m4cf89a1[m AI/TIDL: list the correct projects available
+[33m229c2ba[m AI/TIDL: list the correct projects available
