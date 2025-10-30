@@ -1,5 +1,9 @@
 import time
-from typing import Iterable, Literal, Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List
+try:
+    from typing import Literal  # type: ignore[attr-defined]
+except Exception:  # Python < 3.8 fallback
+    from typing_extensions import Literal  # type: ignore
 
 
 Color = Literal["off", "green", "red", "amber"]
