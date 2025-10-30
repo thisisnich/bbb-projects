@@ -271,8 +271,10 @@ class BarGraph:
     def _encode_masks(self, gmask: int, rmask: int) -> Tuple[int, int, int]:
         # B2: g[1..8] => bits 0..7
         b2 = gmask & 0xFF
-        # B1: r[1..6] (bits 0..5), g[9] (bit 6), g[10] (bit 7)
-        b1 = (rmask & 0x3F) | ((gmask & (1 << 8)) >> 2) | ((gmask & (1 << 9)) >> 2)
+        # B1: r[1..6] => bits 2..7; g[9..10] => bits 0..1
+        b1_red = (rmask & 0x3F) << 2
+        b1_green = (gmask >> 8) & 0x03
+        b1 = (b1_red | b1_green) & 0xFF
         # B0: r[7..10] => bits 0..3; upper nibble unused
         b0 = (rmask >> 6) & 0x0F
         return b0, b1, b2

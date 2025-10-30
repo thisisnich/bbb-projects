@@ -89,7 +89,7 @@ Proposed byte/bit layout (LSB at right):
 [B0][B1][B2]  // MSB ................ LSB
 
 B2 (8 bits, LSB side):   gggggggg   -> Green segments 1..8 (right→left)
-B1 (8 bits):             rrrrrrGG   -> Red segments 1..6 (bits 0..5), Green segments 9..10 (bits 6..7)
+B1 (8 bits):             RRRRRRGG   -> Red segments 1..6 (bits 2..7), Green segments 9..10 (bits 0..1)
 B0 (8 bits, MSB side):   xxxxRRRR   -> Unused (bits 4..7), Red segments 7..10 (bits 0..3)
 ```
 
@@ -110,10 +110,11 @@ g = green, r= red, a=amber(the red and green leds both on), x= off
 10 -> [0x0F, 0xC0, 0xFF] ggggaaaarr
 ```
 
-Interpreting with the proposed layout:
+Interpreting with the proposed layout and your observed behavior:
 - `B2` increments for Green segs 1..8.
-- `B1` bits 6..7 (`0x40`, `0x80`) represent Green segs 9..10.
-- `B0` low nibble increments next in the demo, but in the color-aware mapping these bits will be assigned to Red segs 7..10. We'll provide a green-only compatibility mode that reproduces the demo while introducing color-aware APIs for correct bi-color control.
+- `B1` bits 6..7 (`0x40`, `0x80`) are Red segs 5..6 (explains count=5→`0x40`, count=6→`0xC0`).
+- `B0` low nibble represents Red segs 7..10 (explains counts 7..10 increasing `B0`).
+- `B1` bits 0..1 can be used for Green segs 9..10 when explicitly setting green beyond 8.
 
 We will implement:
 - Mapping helpers for green-only ramp and color-aware masks.
