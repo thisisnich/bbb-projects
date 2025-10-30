@@ -69,7 +69,7 @@ Class: `BarGraph`
     - Returns the 3-byte mask for a given bar count using the selected direction; helpful for preview/testing.
   - `set_color_mask(green_mask: int, red_mask: int) -> None`
     - Color-aware helper: apply 10-bit masks for green and red segments; module maps to the 3 SPI bytes.
-  - `encode_colors(colors: list[Literal["off","green","red","amber"]]) -> tuple[int,int,int]`
+  - `encode_colors(colors: list[Literal["off","green","red","amber"]]) -> tuple[int,int,int]` 
     - Pure function: convert a 10-length color list into the three SPI bytes without sending (useful for previews/tests).
 
 - Animations (optional, cancellable)
