@@ -289,3 +289,130 @@ class BarGraph:
         self._spi.writebytes([b0, b1, b2])  # type: ignore[attr-defined]
 
 
+
+def _print_menu() -> None:
+    print("BarGraph test menu:")
+    print("  1) clear")
+    print("  2) fill")
+    print("  3) set_bars <0-10>")
+    print("  4) set_percentage <0-100> [floor|nearest|ceil]")
+    print("  5) set_segments (example: 1=green,5=amber,10=red) [clear]")
+    print("  6) set_color_mask <green_mask_10> <red_mask_10>  (decimal or 0x..)")
+    print("  7) set_mask <b0> <b1> <b2>  (decimal or 0x..)")
+    print("  8) get_mask_for_bars <0-10>")
+    print("  9) encode_colors <10 chars of g/r/a/x> (right→left)")
+    print(" 10) animate_sweep [delay_s] [cycles]")
+    print(" 11) animate_bounce [delay_s] [cycles]")
+    print("  q) quit")
+
+
+def _parse_int(s: str) -> int:
+    s = s.strip()
+    return int(s, 16) if s.lower().startswith("0x") else int(s)
+
+
+if __name__ == "__main__":
+    bg = BarGraph()
+    try:
+        while True:
+            _print_menu()
+            line = input("> ").strip()
+            if not line:
+                continue
+            if line.lower() in {"q", "quit", "exit"}:
+                break
+            parts = [p.strip() for p in line.split()]
+            cmd = parts[0]
+            try:
+                if cmd == "1":
+                    bg.clear()
+                elif cmd == "2":
+                    bg.fill()
+                elif cmd == "3":
+                    if len(parts) < 2:
+                        print("usage: 3 <0-10>")
+                        continue
+                    bg.set_bars(int(parts[1]))
+                elif cmd == "4":
+                    if len(parts) < 2:
+                        print("usage: 4 <0-100> [floor|nearest|ceil]")
+                        continue
+                    rounding = parts[2] if len(parts) > 2 else "nearest"
+                    used = bg.set_percentage(float(parts[1]), rounding=rounding)  # type: ignore[arg-type]
+                    print(f"bars used: {used}")
+                elif cmd == "5":
+                    # Example: 1=green,5=amber,10=red [clear]
+                    if len(parts) < 2:
+                        print("usage: 5 seg=color[,seg=color...] [clear]")
+                        continue
+                    clear_others = any(p.lower() == "clear" for p in parts[2:])
+                    seg_map: Dict[int, Color] = {}
+                    for item in parts[1].split(','):
+                        if not item:
+                            continue
+                        seg_s, color = item.split('=')
+                        seg = int(seg_s)
+                        color_l = color.lower()
+                        if color_l not in ("off", "green", "red", "amber"):
+                            print("color must be off|green|red|amber")
+                            seg_map = {}
+                            break
+                        seg_map[seg] = color_l  # type: ignore[assignment]
+                    if seg_map:
+                        bg.set_segments(seg_map, clear_others=clear_others)
+                elif cmd == "6":
+                    if len(parts) < 3:
+                        print("usage: 6 <green_mask_10> <red_mask_10>")
+                        continue
+                    gm = _parse_int(parts[1])
+                    rm = _parse_int(parts[2])
+                    bg.set_color_mask(gm, rm)
+                elif cmd == "7":
+                    if len(parts) < 4:
+                        print("usage: 7 <b0> <b1> <b2>")
+                        continue
+                    b0 = _parse_int(parts[1])
+                    b1 = _parse_int(parts[2])
+                    b2 = _parse_int(parts[3])
+                    bg.set_mask(b0, b1, b2)
+                elif cmd == "8":
+                    if len(parts) < 2:
+                        print("usage: 8 <0-10>")
+                        continue
+                    b0, b1, b2 = bg.get_mask_for_bars(int(parts[1]))
+                    print(f"b0=0x{b0:02X} b1=0x{b1:02X} b2=0x{b2:02X}")
+                elif cmd == "9":
+                    if len(parts) < 2:
+                        print("usage: 9 <10 chars of g/r/a/x>")
+                        continue
+                    s = parts[1].strip()
+                    if len(s) != 10 or any(c.lower() not in "grax" for c in s):
+                        print("must be 10 chars using g,r,a,x")
+                        continue
+                    colors: List[Color] = []
+                    for c in s:
+                        if c.lower() == 'g':
+                            colors.append("green")
+                        elif c.lower() == 'r':
+                            colors.append("red")
+                        elif c.lower() == 'a':
+                            colors.append("amber")
+                        else:
+                            colors.append("off")
+                    b0, b1, b2, gm, rm = bg.encode_colors(colors)
+                    print(f"b0=0x{b0:02X} b1=0x{b1:02X} b2=0x{b2:02X}  gm=0x{gm:03X} rm=0x{rm:03X}")
+                    bg.set_mask(b0, b1, b2)
+                elif cmd == "10":
+                    delay = float(parts[1]) if len(parts) > 1 else 0.1
+                    cycles = int(parts[2]) if len(parts) > 2 else None
+                    bg.animate_sweep(delay, cycles)
+                elif cmd == "11":
+                    delay = float(parts[1]) if len(parts) > 1 else 0.1
+                    cycles = int(parts[2]) if len(parts) > 2 else None
+                    bg.animate_bounce(delay, cycles)
+                else:
+                    print("unknown command")
+            except Exception as e:
+                print(f"error: {e}")
+    finally:
+        bg.close()
