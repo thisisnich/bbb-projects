@@ -5,7 +5,7 @@ __all__ = [
     "Potentiometer",
 ]
 
-from .tamper import TamperSwitch
+from .Tamper import TamperSwitch
 from .analogue_key import AnalogueKeypad
 from .keylock import KeyLock
 from .potentiometer import Potentiometer
