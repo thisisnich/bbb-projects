@@ -81,3 +81,5 @@ def get_slot_config(slot: int) -> dict:
     
     return SLOT_CONFIG[slot].copy()
 
+
+
