@@ -5,25 +5,35 @@ Maps slot numbers to their corresponding BeagleBone GPIO pins.
 """
 
 # Slot to pin mapping
-# Format: slot_number: {"pin_name": "pin_number", "type": "GPIO_INPUT|GPIO_OUTPUT|PWM"}
+# Format: slot_number: {"pin_name": "pin_number", "type": "GPIO_INPUT|GPIO_OUTPUT|PWM|ADC"}
 SLOT_CONFIG = {
     1: {
         "input": "P9_15",
-        "input_type": "GPIO_INPUT"
+        "input_type": "GPIO_INPUT",
+        "pwm": "P9_14",
+        "pwm_type": "PWM",
+        "adc": "P9_38",
+        "adc_type": "ADC"
     },
     2: {
         "input": "P9_41",
         "input_type": "GPIO_INPUT",
         "output": "P9_23",
-        "output_type": "GPIO_OUTPUT"
+        "output_type": "GPIO_OUTPUT",
+        "adc": "P9_37",
+        "adc_type": "ADC"
     },
     3: {
         "pwm": "P8_19",
-        "pwm_type": "PWM"
+        "pwm_type": "PWM",
+        "adc": "P9_40",
+        "adc_type": "ADC"
     },
     4: {
         "input": "P8_10",
-        "input_type": "GPIO_INPUT"
+        "input_type": "GPIO_INPUT",
+        "adc": "P9_39",
+        "adc_type": "ADC"
     }
 }
 
@@ -34,7 +44,7 @@ def get_slot_pin(slot: int, pin_type: str = "input") -> str:
     
     Args:
         slot: Slot number (1-4)
-        pin_type: Type of pin ("input", "output", "pwm")
+        pin_type: Type of pin ("input", "output", "pwm", "adc")
     
     Returns:
         Pin string (e.g., "P9_15")
@@ -51,6 +61,10 @@ def get_slot_pin(slot: int, pin_type: str = "input") -> str:
         if "pwm" not in slot_config:
             raise ValueError(f"Slot {slot} does not have a PWM pin")
         return slot_config["pwm"]
+    elif pin_type == "adc":
+        if "adc" not in slot_config:
+            raise ValueError(f"Slot {slot} does not have an ADC pin")
+        return slot_config["adc"]
     elif pin_type == "input":
         if "input" not in slot_config:
             raise ValueError(f"Slot {slot} does not have an input pin")
@@ -60,7 +74,7 @@ def get_slot_pin(slot: int, pin_type: str = "input") -> str:
             raise ValueError(f"Slot {slot} does not have an output pin")
         return slot_config["output"]
     else:
-        raise ValueError(f"Invalid pin_type: {pin_type}. Valid types are: input, output, pwm")
+        raise ValueError(f"Invalid pin_type: {pin_type}. Valid types are: input, output, pwm, adc")
 
 
 def get_slot_config(slot: int) -> dict:
