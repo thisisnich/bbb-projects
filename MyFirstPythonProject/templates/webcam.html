@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BBBW Webcam Stream</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #videoStream {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #334155;
+            border-radius: 0.5rem;
+            background: #0f172a;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #10b981; }
+        .status-offline { background-color: #ef4444; }
+        .status-unknown { background-color: #6b7280; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div class="max-w-6xl mx-auto py-8 px-4 space-y-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-sm text-slate-400">BBBW Webcam Stream</p>
+                <h1 class="text-3xl font-semibold text-white">Logitech C615 HD Webcam</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="statusIndicator" class="status-indicator status-unknown"></div>
+                <span id="statusText" class="text-sm text-slate-300">Checking...</span>
+                <a href="/" class="text-sm text-slate-300 underline hover:text-white">Back to Home</a>
+            </div>
+        </div>
+
+        {% if error %}
+        <!-- Error Message -->
+        <div class="bg-red-900/50 border border-red-800 rounded-xl p-6">
+            <h2 class="text-xl font-semibold text-red-200 mb-2">Webcam Error</h2>
+            <p class="text-red-300">{{ error }}</p>
+            <p class="text-sm text-red-400 mt-4">
+                To install OpenCV on BBBW, run: <code class="bg-red-950 px-2 py-1 rounded">pip3 install opencv-python-headless</code>
+            </p>
+        </div>
+        {% else %}
+
+        <!-- Video Stream -->
+        <div class="bg-slate-900/70 rounded-xl border border-slate-800 shadow-xl p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-medium text-white">Live Stream</h2>
+                <button id="refreshBtn" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-colors">
+                    Refresh Stream
+                </button>
+            </div>
+            <div class="flex justify-center">
+                <img id="videoStream" src="/video_feed" alt="Webcam Stream" />
+            </div>
+        </div>
+
+        <!-- Configuration Panel -->
+        <div class="bg-slate-900/70 rounded-xl border border-slate-800 shadow-xl p-6">
+            <h2 class="text-xl font-medium text-white mb-4">Stream Configuration</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Resolution -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">Resolution</label>
+                    <div class="flex gap-2">
+                        <select id="widthSelect" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                            <option value="320">320</option>
+                            <option value="640" selected>640</option>
+                            <option value="800">800</option>
+                            <option value="1280">1280</option>
+                        </select>
+                        <span class="text-slate-400 self-center">×</span>
+                        <select id="heightSelect" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                            <option value="240">240</option>
+                            <option value="480" selected>480</option>
+                            <option value="600">600</option>
+                            <option value="720">720</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Frame Rate -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">Frame Rate (FPS)</label>
+                    <select id="fpsSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                        <option value="5">5 fps</option>
+                        <option value="10">10 fps</option>
+                        <option value="15" selected>15 fps</option>
+                        <option value="20">20 fps</option>
+                        <option value="30">30 fps</option>
+                    </select>
+                </div>
+
+                <!-- Apply Button -->
+                <div class="flex items-end">
+                    <button id="applyBtn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors">
+                        Apply Settings
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-4">
+                Note: Lower resolution and frame rate reduce CPU usage. Adjust to find the best balance for your BBBW.
+            </p>
+        </div>
+
+        <!-- Current Settings Display -->
+        <div class="bg-slate-900/70 rounded-xl border border-slate-800 shadow-xl p-6">
+            <h2 class="text-xl font-medium text-white mb-4">Current Settings</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-slate-800/50 rounded-lg p-4">
+                    <p class="text-sm text-slate-400">Resolution</p>
+                    <p id="currentResolution" class="text-2xl font-semibold text-white mt-1">--</p>
+                </div>
+                <div class="bg-slate-800/50 rounded-lg p-4">
+                    <p class="text-sm text-slate-400">Frame Rate</p>
+                    <p id="currentFPS" class="text-2xl font-semibold text-white mt-1">--</p>
+                </div>
+                <div class="bg-slate-800/50 rounded-lg p-4">
+                    <p class="text-sm text-slate-400">Status</p>
+                    <p id="currentStatus" class="text-2xl font-semibold text-white mt-1">--</p>
+                </div>
+                <div class="bg-slate-800/50 rounded-lg p-4">
+                    <p class="text-sm text-slate-400">Device</p>
+                    <p id="currentDevice" class="text-2xl font-semibold text-white mt-1">--</p>
+                </div>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <script>
+        // Status checking
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/webcam/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    const indicator = document.getElementById('statusIndicator');
+                    const statusText = document.getElementById('statusText');
+                    const currentStatus = document.getElementById('currentStatus');
+                    const currentResolution = document.getElementById('currentResolution');
+                    const currentFPS = document.getElementById('currentFPS');
+                    const currentDevice = document.getElementById('currentDevice');
+                    
+                    if (data.is_open) {
+                        indicator.className = 'status-indicator status-online';
+                        statusText.textContent = 'Online';
+                        currentStatus.textContent = 'Active';
+                    } else {
+                        indicator.className = 'status-indicator status-offline';
+                        statusText.textContent = 'Offline';
+                        currentStatus.textContent = 'Inactive';
+                    }
+                    
+                    currentResolution.textContent = `${data.width}×${data.height}`;
+                    currentFPS.textContent = `${data.fps} fps`;
+                    currentDevice.textContent = `Camera ${data.device_index}`;
+                } else {
+                    throw new Error('Status check failed');
+                }
+            } catch (error) {
+                const indicator = document.getElementById('statusIndicator');
+                const statusText = document.getElementById('statusText');
+                indicator.className = 'status-indicator status-offline';
+                statusText.textContent = 'Error';
+            }
+        }
+
+        // Apply configuration
+        document.getElementById('applyBtn')?.addEventListener('click', async function() {
+            const width = parseInt(document.getElementById('widthSelect').value);
+            const height = parseInt(document.getElementById('heightSelect').value);
+            const fps = parseInt(document.getElementById('fpsSelect').value);
+            
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Applying...';
+            
+            try {
+                const response = await fetch('/api/webcam/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ width, height, fps })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Settings applied successfully! Stream will restart with new settings.');
+                    // Refresh the video stream
+                    const videoStream = document.getElementById('videoStream');
+                    const currentSrc = videoStream.src;
+                    videoStream.src = '';
+                    setTimeout(() => {
+                        videoStream.src = currentSrc + '?t=' + Date.now();
+                    }, 500);
+                    
+                    // Update status
+                    setTimeout(checkStatus, 1000);
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to apply settings'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Apply Settings';
+            }
+        });
+
+        // Refresh stream button
+        document.getElementById('refreshBtn')?.addEventListener('click', function() {
+            const videoStream = document.getElementById('videoStream');
+            const currentSrc = videoStream.src.split('?')[0];
+            videoStream.src = currentSrc + '?t=' + Date.now();
+        });
+
+        // Initial status check
+        checkStatus();
+        
+        // Check status every 5 seconds
+        setInterval(checkStatus, 5000);
+
+        // Handle image load errors
+        document.getElementById('videoStream')?.addEventListener('error', function() {
+            console.error('Video stream error');
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
+
+

@@ -1,0 +1,5 @@
+Flask==2.3.3
+Adafruit-BBIO==1.2.0
+opencv-python-headless
+
+
