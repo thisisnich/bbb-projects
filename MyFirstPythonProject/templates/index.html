@@ -1,0 +1,61 @@
+<html>
+    <head>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+        <title>BeagleBone Web Server</title>
+    </head>
+    <body>
+        <center>
+            <h1>BeagleBone Web Server Control</h1>
+            
+            <div style="margin: 30px 0;">
+                <h2>USR0 LED Control</h2>
+                <a href="/led/on"><button class="button button1">ON</button></a>
+                <a href="/led/off"><button class="button button1">OFF</button></a>
+                <p>USR0 LED Status: <strong>{{ LedStatusText }}</strong></p>
+            </div>
+            
+            <div style="margin: 30px 0; border-top: 2px solid #ccc; padding-top: 30px;">
+                <h2>8x8 LED Matrix Control</h2>
+                <p>Current Pattern: <strong>{{ MatrixPattern }}</strong></p>
+                
+                <h3>Patterns</h3>
+                <div style="margin: 10px 0;">
+                    <a href="/matrix/clear"><button class="button button1">Clear</button></a>
+                    <a href="/matrix/fill"><button class="button button1">Fill</button></a>
+                    <a href="/matrix/smiley"><button class="button button1">😊</button></a>
+                    <a href="/matrix/heart"><button class="button button1">❤️</button></a>
+                    <a href="/matrix/arrow_up"><button class="button button1">↑</button></a>
+                    <a href="/matrix/arrow_down"><button class="button button1">↓</button></a>
+                </div>
+                <div style="margin: 10px 0;">
+                    <a href="/matrix/arrow_left"><button class="button button1">←</button></a>
+                    <a href="/matrix/arrow_right"><button class="button button1">→</button></a>
+                    <a href="/matrix/check"><button class="button button1">✓</button></a>
+                    <a href="/matrix/x"><button class="button button1">✗</button></a>
+                    <a href="/matrix/circle"><button class="button button1">○</button></a>
+                    <a href="/matrix/diamond"><button class="button button1">◆</button></a>
+                </div>
+                
+                <h3>Animations</h3>
+                <div style="margin: 10px 0;">
+                    <a href="/matrix/animate/spin"><button class="button button1">Spin</button></a>
+                    <a href="/matrix/animate/sweep_h"><button class="button button1">Sweep H</button></a>
+                    <a href="/matrix/animate/sweep_v"><button class="button button1">Sweep V</button></a>
+                    <a href="/matrix/animate/grow"><button class="button button1">Grow</button></a>
+                </div>
+                <div style="margin: 10px 0;">
+                    <a href="/matrix/animate/blink_smiley"><button class="button button1">Blink 😊</button></a>
+                    <a href="/matrix/animate/blink_heart"><button class="button button1">Blink ❤️</button></a>
+                    <a href="/matrix/animate/cycle"><button class="button button1">Cycle All</button></a>
+                </div>
+            </div>
+
+            <div style="margin-top: 40px;">
+                <h2>Motion Dashboard</h2>
+                <p>Track PIR activity, CSV logs, OLED status and charts.</p>
+                <a href="/motion"><button class="button button1">Open Motion Page</button></a>
+            </div>
+        </center>
+    </body>
+</html>
+

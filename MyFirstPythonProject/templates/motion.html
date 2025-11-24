@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Motion Activity Dashboard</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    </head>
+    <body class="bg-slate-950 text-slate-100 min-h-screen">
+        <div class="max-w-5xl mx-auto py-10 px-4 space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-slate-400">BBBW Motion Monitor</p>
+                    <h1 class="text-3xl font-semibold text-white">Motion Activity (Last Hour)</h1>
+                </div>
+                <a href="/" class="text-sm text-slate-300 underline hover:text-white">Back to LED Control</a>
+            </div>
+
+            <div class="bg-slate-900/70 rounded-xl border border-slate-800 shadow-xl">
+                <div class="p-6 border-b border-slate-800">
+                    <h2 class="text-xl font-medium text-white">Motion per Minute</h2>
+                    <p class="text-sm text-slate-400">Aggregated from 1-second samples, refreshed every 5 seconds.</p>
+                </div>
+                <div class="p-6">
+                    <canvas id="motionChart" height="120"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-slate-900/70 rounded-xl border border-slate-800 p-5">
+                    <p class="text-sm text-slate-400">Current Minute Count</p>
+                    <p id="minuteCount" class="text-4xl font-semibold text-white mt-2">--</p>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl border border-slate-800 p-5">
+                    <p class="text-sm text-slate-400">Last Detection</p>
+                    <p id="lastDetection" class="text-2xl font-semibold text-white mt-2">--</p>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl border border-slate-800 p-5">
+                    <p class="text-sm text-slate-400">CSV Log</p>
+                    <p class="text-slate-300 mt-2">Stored at <code>/cloud9/MyFirstPythonProject/logs/motion_log.csv</code></p>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const ctx = document.getElementById('motionChart');
+            const motionChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Motion events per minute',
+                        data: [],
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderRadius: 6,
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: 'rgba(148, 163, 184, 0.2)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            async function fetchMotionData() {
+                try {
+                    const response = await fetch('/api/motion-data');
+                    const payload = await response.json();
+                    const labels = payload.timeline.map(item => new Date(item.minute).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                    const data = payload.timeline.map(item => item.count);
+                    motionChart.data.labels = labels;
+                    motionChart.data.datasets[0].data = data;
+                    motionChart.update('none');
+
+                    document.getElementById('minuteCount').textContent = payload.summary.currentMinuteCount ?? 0;
+                    document.getElementById('lastDetection').textContent = payload.summary.lastDetection
+                        ? new Date(payload.summary.lastDetection).toLocaleTimeString()
+                        : 'No events';
+                } catch (error) {
+                    console.error('Failed to load motion data:', error);
+                }
+            }
+
+            fetchMotionData();
+            setInterval(fetchMotionData, 5000);
+        </script>
+    </body>
+</html>
+
+
