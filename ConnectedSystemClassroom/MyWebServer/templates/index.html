@@ -1,0 +1,399 @@
+<html>
+   <head>
+      <!Provide path to link to styling file, image files and 3rd party javascript library––>
+      <link rel='stylesheet' href="{{ url_for('static', filename='css/style.css') }}">
+      <img id="floorplan" src="{{url_for('static', filename='images/Floorplan.png')}}" style="display: none;">
+      <img id="motionsensoriconblue" src="{{url_for('static', filename='images/MotionSensorIconBlue.png')}}" style="display: none;">
+      <img id="motionsensoriconred" src="{{url_for('static', filename='images/MotionSensorIconRed.png')}}" style="display: none;">
+      <img id="lightbulb" src="{{url_for('static', filename='images/LightBulb.png')}}" style="display: none;">
+      <img id="keypad" src="{{url_for('static', filename='images/Keypad.png')}}" style="display: none;">
+      <img id="dooropen" src="{{url_for('static', filename='images/DoorOpen.png')}}" style="display: none;">
+      <img id="doorclose" src="{{url_for('static', filename='images/DoorClose.png')}}" style="display: none;">
+      
+      <!Use of Javascript library socket.io.js to connect to the python web server––>
+      <script src='https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js'></script>
+      <script src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.2/socket.io.js'></script>
+      <script type='text/javascript'>
+      $(document).ready(function()
+      {
+         //Initialization and declaration of global variable
+         var socket = io.connect('http://192.168.72.161:5000');
+         
+         // Board connection status
+         var boardStatus = {
+            BBBW1: false,
+            BBBW2: false,
+            BBBW3: false,
+            BBBW4: false
+         };
+         
+         // Debug logging
+         function debugLog(message) {
+            var debugDiv = document.getElementById('debugLog');
+            if (debugDiv) {
+               var time = new Date().toLocaleTimeString();
+               debugDiv.innerHTML += '[' + time + '] ' + message + '<br>';
+               debugDiv.scrollTop = debugDiv.scrollHeight;
+            }
+            console.log(message);
+         }
+         
+         // Socket connection events
+         socket.on('connect', function() {
+            debugLog('Connected to server');
+            updateBoardStatus();
+         });
+         
+         socket.on('disconnect', function() {
+            debugLog('Disconnected from server');
+            updateBoardStatus();
+         });
+         
+         // Board status updates
+         socket.on('board_status', function(data) {
+            boardStatus[data.board] = data.status;
+            debugLog(data.board + ' connected - Data: ' + JSON.stringify(data.data));
+            updateBoardStatus();
+         });
+         
+         // Update board status display
+         function updateBoardStatus() {
+            for (var board in boardStatus) {
+               var statusEl = document.getElementById(board + '_status');
+               if (statusEl) {
+                  if (boardStatus[board]) {
+                     statusEl.textContent = 'Connected';
+                     statusEl.style.color = 'green';
+                  } else {
+                     statusEl.textContent = 'Disconnected';
+                     statusEl.style.color = 'red';
+                  }
+               }
+            }
+         }
+         var floorPlanCanvas = document.getElementById("centerCanvas");
+         var floorPlanContext = floorPlanCanvas.getContext("2d");
+         var floorPlanImage = document.getElementById("floorplan");
+
+         var motionCanvas = document.getElementById("topLeftCanvas");
+         var motionContext = motionCanvas.getContext("2d");
+         var motionSensorIconBlueImage = document.getElementById("motionsensoriconblue");
+         var motionSensorIconRedImage = document.getElementById("motionsensoriconred");
+			
+         var lightCanvas = document.getElementById("bottomLeftCanvas");
+         var lightContext = lightCanvas.getContext("2d");
+         var lightBulbImage = document.getElementById("lightbulb");
+	
+         var doorAccessCanvas = document.getElementById("topRightCanvas");
+         var doorAccessContext = doorAccessCanvas.getContext("2d");
+         var keyPadImage = document.getElementById("keypad");
+
+         var doorDetectCanvas = document.getElementById("bottomRightCanvas");
+         var doorDetectContext = doorDetectCanvas.getContext("2d");
+         var doorOpenImage = document.getElementById("dooropen");
+         var doorCloseImage = document.getElementById("doorclose");
+			
+         var BlinkingFlagStatus = 0;
+         var DoorOpenTurning;
+         var DoorRotateCount = 0;
+         var DoorOpenCloseStatus = 0;
+			
+         //Image Printing
+         floorPlanContext.drawImage(floorPlanImage, 0, 0);
+         motionContext.drawImage(motionSensorIconBlueImage, 70, 37);
+         lightContext.drawImage(lightBulbImage, 75, 50);
+         doorAccessContext.drawImage(keyPadImage, 50, 0);
+         doorDetectContext.drawImage(doorCloseImage, 50, 33);
+			
+         //Door Panel Printing
+         floorPlanContext.beginPath();
+         floorPlanContext.lineWidth = 5;
+         floorPlanContext.lineCap = "round";
+         floorPlanContext.moveTo(550,420);
+         floorPlanContext.lineTo(550,375);
+         floorPlanContext.stroke();
+
+         $(window).on('load',function(){
+         floorPlanContext.drawImage(floorPlanImage, 0, 0);
+         motionContext.drawImage(motionSensorIconBlueImage, 70, 37);
+         lightContext.drawImage(lightBulbImage, 75, 50);
+         doorAccessContext.drawImage(keyPadImage, 50, 0);
+         doorDetectContext.drawImage(doorCloseImage, 50, 33);
+         });
+	
+         //Event triggered when python web server received data from BBBW1
+         socket.on('Web_BBBW1Event', function(RxData) {
+            debugLog('BBBW1 Event: ' + JSON.stringify(RxData));
+            boardStatus.BBBW1 = true;
+            updateBoardStatus();
+            MotionDetection_BlinkImage();
+         });
+			
+         //Event triggered when python web server received data from BBBW2
+         socket.on('Web_BBBW2Event', function(RxData) {
+            debugLog('BBBW2 Event: ' + JSON.stringify(RxData));
+            boardStatus.BBBW2 = true;
+            updateBoardStatus();
+            var brightness = RxData.data;
+            if (typeof brightness === 'number') {
+               LightingControl_AdjustBrightness(brightness);
+            } else {
+               debugLog('BBBW2: Invalid brightness value: ' + brightness);
+            }
+         });
+
+
+
+         //Event triggered when python web server received data from BBBW3
+         socket.on('Web_BBBW3Event', function(RxData) {
+            debugLog('BBBW3 Event: ' + JSON.stringify(RxData));
+            boardStatus.BBBW3 = true;
+            updateBoardStatus();
+            var keyPressed = RxData.data;
+            if (typeof keyPressed === 'number') {
+               DoorAccess_KeyCheck(keyPressed);
+            } else {
+               debugLog('BBBW3: Invalid key value: ' + keyPressed);
+            }
+         });
+			
+         //Event triggered when python web server received data from BBBW4
+         socket.on('Web_BBBW4Event', function(RxData) {
+            debugLog('BBBW4 Event: ' + JSON.stringify(RxData));
+            boardStatus.BBBW4 = true;
+            updateBoardStatus();
+            if(DoorOpenCloseStatus == 1)
+	 {
+	    DoorDetection_OpenCloseCheck(RxData.data);
+	 }
+         });
+         
+         //Event triggered when python web server received video frame from BBBW4
+         socket.on('Web_BBBW4VideoFrame', function(RxData) {
+            boardStatus.BBBW4 = true;
+            updateBoardStatus();
+            if (RxData && RxData.data) {
+               var videoElement = document.getElementById('bbbw4Video');
+               if (videoElement) {
+                  videoElement.src = 'data:image/jpeg;base64,' + RxData.data;
+               }
+            }
+         });
+			
+         //MotionDetection_BlinkImage Function
+         //Toggle between motionSensorIconBlueImage & motionSensorIconRedImage when motion is detected
+         function MotionDetection_BlinkImage()
+         {
+            debugLog('BBBW1: Motion detected - toggling image');
+            //Clear the existing image
+	 motionContext.globalAlpha = 1.0;
+	 motionContext.clearRect(0, 0, 200, 155);
+	
+	 if (BlinkingFlagStatus == 0)
+	 {
+	    BlinkingFlagStatus = 1;
+	    motionContext.drawImage(motionSensorIconRedImage, 70, 37);
+	 }
+	 else
+	 {
+	    BlinkingFlagStatus = 0;
+	    motionContext.drawImage(motionSensorIconBlueImage, 70, 37);	
+	 }
+         }
+			
+         //LightingControl_AdjustBrightness Function
+         //Adjust the transparency level of the yellow circle based on the value received from the Pot Click
+         function LightingControl_AdjustBrightness(BrightnessLevel)
+         {
+            debugLog('BBBW2: Adjusting brightness to ' + BrightnessLevel);
+            lightContext.globalAlpha = 1.0;
+	 lightContext.clearRect(0, 0, 200, 155);
+	 lightContext.drawImage(lightBulbImage, 75, 50);
+	 lightContext.beginPath();
+	 lightContext.globalAlpha = BrightnessLevel;
+	 lightContext.arc(100, 70, 40, 0, 2 * Math.PI);
+	 lightContext.fillStyle = 'yellow';
+	 lightContext.fill();
+         }
+			
+         //DoorAccess_KeyCheck Function
+         //Highlight the individual number key based on the value received from the Analog Key Click
+         function DoorAccess_KeyCheck(KeyPressed)
+         {
+            debugLog('BBBW3: Key pressed: ' + KeyPressed);
+            doorAccessContext.globalAlpha = 1.0;
+	 doorAccessContext.clearRect(0, 0, 200, 155);
+	 doorAccessContext.drawImage(keyPadImage, 50, 0);
+	 if(KeyPressed == 1)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(72, 20, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+	 }
+	 if(KeyPressed == 2)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(127, 20, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+	 }
+	 if(KeyPressed == 3)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(72, 75, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+	 }
+	 if(KeyPressed == 4)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(127, 75, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+	 }
+
+
+
+
+
+	 if(KeyPressed == 5)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(72, 130, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+	 }
+	 if(KeyPressed == 6)
+	 {
+	    doorAccessContext.beginPath();
+	    doorAccessContext.globalAlpha = 0.5;
+	    doorAccessContext.arc(127, 130, 24, 0, 2 * Math.PI);
+	    doorAccessContext.fillStyle = 'white';
+	    doorAccessContext.fill();
+               
+               floorPlanContext.translate(550, 420);
+	    DoorOpenTurning = setInterval(DoorOpenTurningAnimation, 50);
+	 }
+         }
+			
+         //DoorOpenTurningAnimation Function
+         function DoorOpenTurningAnimation()
+         {
+            floorPlanContext.globalAlpha = 1.0;
+	 floorPlanContext.clearRect(-10, 0, 60, -53);
+			
+	 floorPlanContext.beginPath();
+	 floorPlanContext.lineWidth = 5;
+	 floorPlanContext.lineCap = "round";
+	 floorPlanContext.moveTo(0,0);
+	 floorPlanContext.lineTo(0,-45);
+	 floorPlanContext.stroke();
+	 floorPlanContext.rotate(0.1);
+	 DoorRotateCount++;
+	 if (DoorRotateCount == 17)
+	 {  
+	    DoorRotateCount = 0;
+	    floorPlanContext.rotate(-1.7);
+	    floorPlanContext.translate(-550, -420);
+	    floorPlanContext.globalAlpha = 1.0;
+	    doorDetectContext.clearRect(0, 0, 200, 155);
+	    doorDetectContext.drawImage(doorOpenImage, 50, 28);
+	    DoorOpenCloseStatus = 1;
+	    clearInterval(DoorOpenTurning);
+	 }				
+         }
+			
+         //DoorDetection_OpenCloseCheck Function
+         function DoorDetection_OpenCloseCheck(DoorDetectionStatus)
+         {
+            if (DoorDetectionStatus == 1)
+	 {
+	    doorDetectContext.globalAlpha = 1.0;
+	    doorDetectContext.clearRect(0, 0, 200, 155);
+	    doorDetectContext.drawImage(doorCloseImage, 50, 33);
+	 }
+	 else
+	 {
+	    doorDetectContext.globalAlpha = 1.0;
+	    doorDetectContext.clearRect(0, 0, 200, 155);
+	    doorDetectContext.drawImage(doorOpenImage, 50, 28);
+	 }
+         }
+      });
+      </script>
+   </head>
+
+   <body>
+      <center>
+         <h1>Connected System Classroom</h1>
+         <div style="margin: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+            <h3>Board Connection Status</h3>
+            <table style="margin: 0 auto;">
+               <tr>
+                  <td style="padding: 5px;"><strong>BBBW1 (Motion):</strong> <span id="BBBW1_status" style="font-weight: bold;">Disconnected</span></td>
+                  <td style="padding: 5px;"><strong>BBBW2 (Pot):</strong> <span id="BBBW2_status" style="font-weight: bold;">Disconnected</span></td>
+               </tr>
+               <tr>
+                  <td style="padding: 5px;"><strong>BBBW3 (Keypad):</strong> <span id="BBBW3_status" style="font-weight: bold;">Disconnected</span></td>
+                  <td style="padding: 5px;"><strong>BBBW4 (Reed):</strong> <span id="BBBW4_status" style="font-weight: bold;">Disconnected</span></td>
+               </tr>
+            </table>
+         </div>
+            <table>
+	 <tr>
+	    <td>
+	       <h3>Motion Detection</h3>
+	       <canvas id="topLeftCanvas" width="200" height="155">
+                     Your browser does not support the HTML5 canvas tag.
+	       </canvas>
+	    </td>
+	    <td rowspan = "2">
+	       <canvas id="centerCanvas" width="620" height="440" style="border:1px solid #d3d3d3;" >
+                     Your browser does not support the HTML5 canvas tag.
+	       </canvas>
+	    </td>
+	    <td>
+	       <h3>Door Access</h3>
+	       <canvas id="topRightCanvas" width="200" height="155">
+	          Your browser does not support the HTML5 canvas tag.
+	       </canvas>
+	    </td>
+            </tr>
+	
+            <tr>
+               <td>
+	       <h3>Lighting Control</h3>
+                  <canvas id="bottomLeftCanvas" width="200" height="155">
+	          Your browser does not support the HTML5 canvas tag.
+	       </canvas>
+	    </td>
+	    <td>
+	       <h3>Door Detection</h3>
+	       <canvas id="bottomRightCanvas" width="200" height="155" >
+	          Your browser does not support the HTML5 canvas tag.
+	       </canvas>
+	    </td>
+	 </tr>
+         </table>
+         <div style="margin: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; max-width: 800px; margin-left: auto; margin-right: auto;">
+            <h3>BBBW4 Webcam Feed</h3>
+            <img id="bbbw4Video" src="" alt="Webcam feed" style="max-width: 100%; height: auto; border: 2px solid #ddd; border-radius: 5px; background-color: #000;" />
+            <p style="color: gray; font-size: 12px;">Live video feed from BBBW4 (Reed Click board)</p>
+         </div>
+         <div style="margin: 20px; padding: 10px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 5px; max-width: 800px; margin-left: auto; margin-right: auto;">
+            <h3>Debug Log</h3>
+            <div id="debugLog" style="height: 150px; overflow-y: auto; background-color: #fff; padding: 10px; border: 1px solid #ccc; font-family: monospace; font-size: 12px; text-align: left;">
+            </div>
+            <button onclick="document.getElementById('debugLog').innerHTML = '';" style="margin-top: 5px;">Clear Log</button>
+         </div>
+         <h5>Copyright @ EGE205 Connected System Project Design</h5>
+      </center>
+   </body>
+</html>
+

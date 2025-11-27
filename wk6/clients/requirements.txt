@@ -1,0 +1,6 @@
+python-socketio[client]==5.11.2
+click==8.1.7
+requests==2.32.3
+# Optional hardware helpers – install only on BBBW if needed
+Adafruit_BBIO==1.2.0
+
