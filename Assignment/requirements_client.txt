@@ -1,0 +1,7 @@
+# Python packages (install with: pip install -r requirements_client.txt)
+python-socketio>=5.0.0
+
+# System packages (install with: sudo apt-get install <package>)
+# fswebcam - Required for webcam capture on BBBW
+# Install: sudo apt-get install fswebcam
+

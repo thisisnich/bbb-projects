@@ -1,0 +1,302 @@
+<svg viewBox="0 0 1400 2000" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="700" y="30" font-size="24" font-weight="bold" text-anchor="middle" fill="#1a1a1a">
+    SMART SPORTS FACILITY SYSTEM - HARDWARE ARCHITECTURE
+  </text>
+  
+  <!-- MODULE 1: CROWD INTELLIGENCE UNIT -->
+  <g id="module1">
+    <text x="350" y="80" font-size="18" font-weight="bold" text-anchor="middle" fill="#2563eb">
+      MODULE 1: CROWD INTELLIGENCE UNIT
+    </text>
+    
+    <!-- Main Board -->
+    <rect x="150" y="100" width="400" height="280" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+    
+    <!-- BeagleBone -->
+    <rect x="170" y="120" width="160" height="60" rx="5" fill="#3b82f6" stroke="#1e40af" stroke-width="2"/>
+    <text x="250" y="145" font-size="14" font-weight="bold" text-anchor="middle" fill="white">BeagleBone Black</text>
+    <text x="250" y="165" font-size="12" text-anchor="middle" fill="white">Wireless</text>
+    
+    <!-- Click Boards -->
+    <rect x="170" y="200" width="120" height="40" rx="3" fill="#60a5fa" stroke="#2563eb" stroke-width="1"/>
+    <text x="230" y="225" font-size="11" text-anchor="middle" fill="white">MIC Click</text>
+    
+    <rect x="310" y="200" width="120" height="40" rx="3" fill="#60a5fa" stroke="#2563eb" stroke-width="1"/>
+    <text x="370" y="225" font-size="11" text-anchor="middle" fill="white">Motion Click</text>
+    
+    <rect x="170" y="250" width="120" height="40" rx="3" fill="#60a5fa" stroke="#2563eb" stroke-width="1"/>
+    <text x="230" y="275" font-size="11" text-anchor="middle" fill="white">OLED Click</text>
+    
+    <rect x="310" y="250" width="120" height="40" rx="3" fill="#60a5fa" stroke="#2563eb" stroke-width="1"/>
+    <text x="370" y="275" font-size="11" text-anchor="middle" fill="white">Proximity Click</text>
+    
+    <!-- USB Webcam -->
+    <rect x="170" y="310" width="260" height="50" rx="5" fill="#93c5fd" stroke="#2563eb" stroke-width="2"/>
+    <text x="300" y="330" font-size="12" font-weight="bold" text-anchor="middle" fill="#1e40af">USB Webcam</text>
+    <text x="300" y="348" font-size="10" text-anchor="middle" fill="#1e40af">(Google AI Processing)</text>
+  </g>
+  
+  <!-- MODULE 2: ENVIRONMENT STATION -->
+  <g id="module2">
+    <text x="1050" y="80" font-size="18" font-weight="bold" text-anchor="middle" fill="#059669">
+      MODULE 2: ENVIRONMENT STATION
+    </text>
+    
+    <rect x="850" y="100" width="400" height="280" rx="10" fill="#d1fae5" stroke="#059669" stroke-width="3"/>
+    
+    <!-- BeagleBone -->
+    <rect x="870" y="120" width="160" height="60" rx="5" fill="#10b981" stroke="#047857" stroke-width="2"/>
+    <text x="950" y="145" font-size="14" font-weight="bold" text-anchor="middle" fill="white">BeagleBone Black</text>
+    <text x="950" y="165" font-size="12" text-anchor="middle" fill="white">Wireless</text>
+    
+    <!-- Click Boards -->
+    <rect x="870" y="200" width="120" height="40" rx="3" fill="#34d399" stroke="#059669" stroke-width="1"/>
+    <text x="930" y="218" font-size="10" text-anchor="middle" fill="white">Environment</text>
+    <text x="930" y="230" font-size="9" text-anchor="middle" fill="white">(Temp/Hum/VOC)</text>
+    
+    <rect x="1010" y="200" width="120" height="40" rx="3" fill="#34d399" stroke="#059669" stroke-width="1"/>
+    <text x="1070" y="225" font-size="11" text-anchor="middle" fill="white">UV 3 Click</text>
+    
+    <rect x="870" y="250" width="120" height="40" rx="3" fill="#34d399" stroke="#059669" stroke-width="1"/>
+    <text x="930" y="275" font-size="11" text-anchor="middle" fill="white">Bar Graph 2</text>
+    
+    <rect x="1010" y="250" width="120" height="40" rx="3" fill="#34d399" stroke="#059669" stroke-width="1"/>
+    <text x="1070" y="275" font-size="11" text-anchor="middle" fill="white">OLED Click</text>
+    
+    <!-- Output -->
+    <rect x="870" y="310" width="260" height="50" rx="5" fill="#6ee7b7" stroke="#059669" stroke-width="2"/>
+    <text x="1000" y="330" font-size="12" font-weight="bold" text-anchor="middle" fill="#047857">Comfort Score</text>
+    <text x="1000" y="348" font-size="10" text-anchor="middle" fill="#047857">Weather Safety Advisory</text>
+  </g>
+  
+  <!-- MODULE 3: FEEDBACK KIOSK -->
+  <g id="module3">
+    <text x="350" y="440" font-size="18" font-weight="bold" text-anchor="middle" fill="#dc2626">
+      MODULE 3: FEEDBACK KIOSK
+    </text>
+    
+    <rect x="150" y="460" width="400" height="280" rx="10" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
+    
+    <!-- BeagleBone -->
+    <rect x="170" y="480" width="160" height="60" rx="5" fill="#ef4444" stroke="#991b1b" stroke-width="2"/>
+    <text x="250" y="505" font-size="14" font-weight="bold" text-anchor="middle" fill="white">BeagleBone Black</text>
+    <text x="250" y="525" font-size="12" text-anchor="middle" fill="white">Wireless</text>
+    
+    <!-- Click Boards -->
+    <rect x="170" y="560" width="120" height="40" rx="3" fill="#f87171" stroke="#dc2626" stroke-width="1"/>
+    <text x="230" y="585" font-size="11" text-anchor="middle" fill="white">OLED Click</text>
+    
+    <rect x="310" y="560" width="120" height="40" rx="3" fill="#f87171" stroke="#dc2626" stroke-width="1"/>
+    <text x="370" y="585" font-size="11" text-anchor="middle" fill="white">IR Gesture</text>
+    
+    <rect x="170" y="610" width="120" height="40" rx="3" fill="#f87171" stroke="#dc2626" stroke-width="1"/>
+    <text x="230" y="635" font-size="11" text-anchor="middle" fill="white">LED Matrix</text>
+    
+    <rect x="310" y="610" width="120" height="40" rx="3" fill="#f87171" stroke="#dc2626" stroke-width="1"/>
+    <text x="370" y="635" font-size="11" text-anchor="middle" fill="white">Buzz 2 Click</text>
+    
+    <!-- Output -->
+    <rect x="170" y="670" width="260" height="50" rx="5" fill="#fca5a5" stroke="#dc2626" stroke-width="2"/>
+    <text x="300" y="690" font-size="12" font-weight="bold" text-anchor="middle" fill="#991b1b">User Ratings</text>
+    <text x="300" y="708" font-size="10" text-anchor="middle" fill="#991b1b">Maintenance Reports</text>
+  </g>
+  
+  <!-- MODULE 4: SECURITY DASHBOARD -->
+  <g id="module4">
+    <text x="1050" y="440" font-size="18" font-weight="bold" text-anchor="middle" fill="#7c3aed">
+      MODULE 4: SECURITY DASHBOARD
+    </text>
+    
+    <rect x="850" y="460" width="400" height="280" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="3"/>
+    
+    <!-- BeagleBone -->
+    <rect x="870" y="480" width="160" height="60" rx="5" fill="#8b5cf6" stroke="#5b21b6" stroke-width="2"/>
+    <text x="950" y="505" font-size="14" font-weight="bold" text-anchor="middle" fill="white">BeagleBone Black</text>
+    <text x="950" y="525" font-size="12" text-anchor="middle" fill="white">Wireless</text>
+    
+    <!-- Click Boards -->
+    <rect x="870" y="560" width="120" height="40" rx="3" fill="#a78bfa" stroke="#7c3aed" stroke-width="1"/>
+    <text x="930" y="585" font-size="11" text-anchor="middle" fill="white">OLED Click</text>
+    
+    <rect x="1010" y="560" width="120" height="40" rx="3" fill="#a78bfa" stroke="#7c3aed" stroke-width="1"/>
+    <text x="1070" y="585" font-size="11" text-anchor="middle" fill="white">LED Matrix</text>
+    
+    <rect x="870" y="610" width="120" height="40" rx="3" fill="#a78bfa" stroke="#7c3aed" stroke-width="1"/>
+    <text x="930" y="635" font-size="11" text-anchor="middle" fill="white">7-Seg 8x8</text>
+    
+    <rect x="1010" y="610" width="120" height="40" rx="3" fill="#a78bfa" stroke="#7c3aed" stroke-width="1"/>
+    <text x="1070" y="635" font-size="11" text-anchor="middle" fill="white">Buzz 2 Click</text>
+    
+    <!-- Output -->
+    <rect x="870" y="670" width="260" height="50" rx="5" fill="#c4b5fd" stroke="#7c3aed" stroke-width="2"/>
+    <text x="1000" y="690" font-size="12" font-weight="bold" text-anchor="middle" fill="#5b21b6">Security Alerts</text>
+    <text x="1000" y="708" font-size="10" text-anchor="middle" fill="#5b21b6">Maintenance Priorities</text>
+  </g>
+  
+  <!-- MODULE 5: COURT DISPLAY -->
+  <g id="module5">
+    <text x="350" y="800" font-size="18" font-weight="bold" text-anchor="middle" fill="#ea580c">
+      MODULE 5: COURT DISPLAY (Public)
+    </text>
+    
+    <rect x="150" y="820" width="400" height="280" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="3"/>
+    
+    <!-- BeagleBone -->
+    <rect x="170" y="840" width="160" height="60" rx="5" fill="#f97316" stroke="#9a3412" stroke-width="2"/>
+    <text x="250" y="865" font-size="14" font-weight="bold" text-anchor="middle" fill="white">BeagleBone Black</text>
+    <text x="250" y="885" font-size="12" text-anchor="middle" fill="white">Wireless</text>
+    
+    <!-- Click Boards -->
+    <rect x="170" y="920" width="120" height="40" rx="3" fill="#fb923c" stroke="#ea580c" stroke-width="1"/>
+    <text x="230" y="945" font-size="11" text-anchor="middle" fill="white">OLED Click</text>
+    
+    <rect x="310" y="920" width="120" height="40" rx="3" fill="#fb923c" stroke="#ea580c" stroke-width="1"/>
+    <text x="370" y="945" font-size="11" text-anchor="middle" fill="white">Bar Graph 2</text>
+    
+    <rect x="170" y="970" width="120" height="40" rx="3" fill="#fb923c" stroke="#ea580c" stroke-width="1"/>
+    <text x="230" y="995" font-size="11" text-anchor="middle" fill="white">Analog Key</text>
+    
+    <rect x="310" y="970" width="120" height="40" rx="3" fill="#fb923c" stroke="#ea580c" stroke-width="1"/>
+    <text x="370" y="995" font-size="11" text-anchor="middle" fill="white">Buzz 2 Click</text>
+    
+    <!-- Output -->
+    <rect x="170" y="1030" width="260" height="50" rx="5" fill="#fdba74" stroke="#ea580c" stroke-width="2"/>
+    <text x="300" y="1050" font-size="12" font-weight="bold" text-anchor="middle" fill="#9a3412">Court Status</text>
+    <text x="300" y="1068" font-size="10" text-anchor="middle" fill="#9a3412">Predictions &amp; Recommendations</text>
+  </g>
+  
+  <!-- CLOUD SERVER -->
+  <g id="cloud">
+    <text x="1050" y="950" font-size="18" font-weight="bold" text-anchor="middle" fill="#1f2937">
+      CLOUD SERVER (Analytics)
+    </text>
+    
+    <rect x="850" y="820" width="400" height="280" rx="10" fill="#f3f4f6" stroke="#1f2937" stroke-width="3"/>
+    
+    <!-- Server -->
+    <rect x="920" y="860" width="260" height="80" rx="5" fill="#6b7280" stroke="#374151" stroke-width="2"/>
+    <text x="1050" y="890" font-size="14" font-weight="bold" text-anchor="middle" fill="white">Web Server</text>
+    <text x="1050" y="910" font-size="11" text-anchor="middle" fill="white">MQTT Broker</text>
+    <text x="1050" y="928" font-size="11" text-anchor="middle" fill="white">Database (Time-series)</text>
+    
+    <!-- Processing -->
+    <rect x="870" y="960" width="140" height="50" rx="3" fill="#9ca3af" stroke="#4b5563" stroke-width="1"/>
+    <text x="940" y="980" font-size="10" text-anchor="middle" fill="white">Pattern Learning</text>
+    <text x="940" y="995" font-size="10" text-anchor="middle" fill="white">Predictions</text>
+    
+    <rect x="1020" y="960" width="140" height="50" rx="3" fill="#9ca3af" stroke="#4b5563" stroke-width="1"/>
+    <text x="1090" y="980" font-size="10" text-anchor="middle" fill="white">Alert Generation</text>
+    <text x="1090" y="995" font-size="10" text-anchor="middle" fill="white">Analytics</text>
+    
+    <!-- APIs -->
+    <rect x="870" y="1020" width="310" height="60" rx="5" fill="#d1d5db" stroke="#6b7280" stroke-width="2"/>
+    <text x="1025" y="1045" font-size="11" font-weight="bold" text-anchor="middle" fill="#374151">External APIs:</text>
+    <text x="1025" y="1062" font-size="10" text-anchor="middle" fill="#374151">Google AI Pro (Image Recognition)</text>
+  </g>
+  
+  <!-- SYSTEM INTEGRATION DIAGRAM -->
+  <text x="700" y="1180" font-size="24" font-weight="bold" text-anchor="middle" fill="#1a1a1a">
+    SYSTEM INTEGRATION - DATA FLOW
+  </text>
+  
+  <rect x="50" y="1200" width="1300" height="750" rx="10" fill="#fefce8" stroke="#ca8a04" stroke-width="3"/>
+  
+  <!-- Cloud in center -->
+  <ellipse cx="700" cy="1550" rx="180" ry="100" fill="#6b7280" stroke="#374151" stroke-width="3"/>
+  <text x="700" y="1530" font-size="16" font-weight="bold" text-anchor="middle" fill="white">CLOUD SERVER</text>
+  <text x="700" y="1550" font-size="12" text-anchor="middle" fill="white">Analytics Engine</text>
+  <text x="700" y="1568" font-size="12" text-anchor="middle" fill="white">MQTT Broker</text>
+  <text x="700" y="1586" font-size="12" text-anchor="middle" fill="white">Database</text>
+  
+  <!-- Module 1 -->
+  <rect x="100" y="1250" width="180" height="120" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="190" y="1275" font-size="13" font-weight="bold" text-anchor="middle" fill="#1e40af">MODULE 1</text>
+  <text x="190" y="1295" font-size="11" text-anchor="middle" fill="#1e40af">Crowd Detection</text>
+  <text x="190" y="1315" font-size="10" text-anchor="middle" fill="#2563eb">• People count</text>
+  <text x="190" y="1332" font-size="10" text-anchor="middle" fill="#2563eb">• Noise level</text>
+  <text x="190" y="1349" font-size="10" text-anchor="middle" fill="#2563eb">• Motion data</text>
+  
+  <!-- Module 2 -->
+  <rect x="100" y="1400" width="180" height="120" rx="8" fill="#d1fae5" stroke="#059669" stroke-width="2"/>
+  <text x="190" y="1425" font-size="13" font-weight="bold" text-anchor="middle" fill="#047857">MODULE 2</text>
+  <text x="190" y="1445" font-size="11" text-anchor="middle" fill="#047857">Environment</text>
+  <text x="190" y="1465" font-size="10" text-anchor="middle" fill="#059669">• Temperature</text>
+  <text x="190" y="1482" font-size="10" text-anchor="middle" fill="#059669">• UV index</text>
+  <text x="190" y="1499" font-size="10" text-anchor="middle" fill="#059669">• Comfort score</text>
+  
+  <!-- Module 3 -->
+  <rect x="100" y="1550" width="180" height="120" rx="8" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+  <text x="190" y="1575" font-size="13" font-weight="bold" text-anchor="middle" fill="#991b1b">MODULE 3</text>
+  <text x="190" y="1595" font-size="11" text-anchor="middle" fill="#991b1b">Feedback Kiosk</text>
+  <text x="190" y="1615" font-size="10" text-anchor="middle" fill="#dc2626">• User ratings</text>
+  <text x="190" y="1632" font-size="10" text-anchor="middle" fill="#dc2626">• Maintenance</text>
+  <text x="190" y="1649" font-size="10" text-anchor="middle" fill="#dc2626">• Issues</text>
+  
+  <!-- Module 4 -->
+  <rect x="1120" y="1400" width="180" height="120" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1210" y="1425" font-size="13" font-weight="bold" text-anchor="middle" fill="#5b21b6">MODULE 4</text>
+  <text x="1210" y="1445" font-size="11" text-anchor="middle" fill="#5b21b6">Security Dashboard</text>
+  <text x="1210" y="1465" font-size="10" text-anchor="middle" fill="#7c3aed">• Alerts</text>
+  <text x="1210" y="1482" font-size="10" text-anchor="middle" fill="#7c3aed">• Monitoring</text>
+  <text x="1210" y="1499" font-size="10" text-anchor="middle" fill="#7c3aed">• Priorities</text>
+  
+  <!-- Module 5 -->
+  <rect x="1120" y="1700" width="180" height="120" rx="8" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="1210" y="1725" font-size="13" font-weight="bold" text-anchor="middle" fill="#9a3412">MODULE 5</text>
+  <text x="1210" y="1745" font-size="11" text-anchor="middle" fill="#9a3412">Court Display</text>
+  <text x="1210" y="1765" font-size="10" text-anchor="middle" fill="#ea580c">• Status</text>
+  <text x="1210" y="1782" font-size="10" text-anchor="middle" fill="#ea580c">• Predictions</text>
+  <text x="1210" y="1799" font-size="10" text-anchor="middle" fill="#ea580c">• Recommendations</text>
+  
+  <!-- Arrows from Modules 1-3 to Cloud -->
+  <defs>
+    <marker id="arrowblue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2563eb" />
+    </marker>
+    <marker id="arrowgreen" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#059669" />
+    </marker>
+    <marker id="arrowred" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#dc2626" />
+    </marker>
+    <marker id="arrowpurple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed" />
+    </marker>
+    <marker id="arroworange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ea580c" />
+    </marker>
+  </defs>
+  
+  <!-- Data flow arrows -->
+  <path d="M 280 1310 Q 450 1400 520 1520" stroke="#2563eb" stroke-width="3" fill="none" marker-end="url(#arrowblue)"/>
+  <text x="380" y="1390" font-size="11" fill="#2563eb" font-weight="bold">Sensor Data</text>
+  
+  <path d="M 280 1460 Q 450 1480 520 1530" stroke="#059669" stroke-width="3" fill="none" marker-end="url(#arrowgreen)"/>
+  <text x="380" y="1480" font-size="11" fill="#059669" font-weight="bold">Weather Data</text>
+  
+  <path d="M 280 1610 Q 450 1590 520 1560" stroke="#dc2626" stroke-width="3" fill="none" marker-end="url(#arrowred)"/>
+  <text x="380" y="1600" font-size="11" fill="#dc2626" font-weight="bold">Ratings</text>
+  
+  <!-- Arrows from Cloud to Modules 4-5 -->
+  <path d="M 880 1520 Q 1000 1480 1120 1460" stroke="#7c3aed" stroke-width="3" fill="none" marker-end="url(#arrowpurple)"/>
+  <text x="960" y="1490" font-size="11" fill="#7c3aed" font-weight="bold">Alerts</text>
+  
+  <path d="M 820 1620 Q 970 1700 1120 1760" stroke="#ea580c" stroke-width="3" fill="none" marker-end="url(#arroworange)"/>
+  <text x="930" y="1680" font-size="11" fill="#ea580c" font-weight="bold">Insights</text>
+  
+  <!-- WiFi indicators -->
+  <text x="400" y="1260" font-size="20" fill="#2563eb">📶</text>
+  <text x="400" y="1410" font-size="20" fill="#059669">📶</text>
+  <text x="400" y="1560" font-size="20" fill="#dc2626">📶</text>
+  <text x="1000" y="1410" font-size="20" fill="#7c3aed">📶</text>
+  <text x="1000" y="1710" font-size="20" fill="#ea580c">📶</text>
+  
+  <!-- Legend -->
+  <rect x="500" y="1800" width="400" height="130" rx="5" fill="white" stroke="#6b7280" stroke-width="2"/>
+  <text x="700" y="1825" font-size="14" font-weight="bold" text-anchor="middle" fill="#1f2937">DATA FLOW LEGEND</text>
+  <text x="520" y="1850" font-size="11" fill="#1f2937">• Modules 1-3 send sensor data to Cloud</text>
+  <text x="520" y="1870" font-size="11" fill="#1f2937">• Cloud processes, stores, analyzes</text>
+  <text x="520" y="1890" font-size="11" fill="#1f2937">• Cloud sends alerts to Module 4 (Security)</text>
+  <text x="520" y="1910" font-size="11" fill="#1f2937">• Cloud sends insights to Module 5 (Public)</text>
+</svg>
