@@ -240,6 +240,24 @@
         .log-entry.success {
             color: #10b981;
         }
+        
+        .test-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        
+        .test-btn:hover {
+            opacity: 0.8;
+        }
+        
+        .test-btn:active {
+            opacity: 0.6;
+        }
     </style>
 </head>
 <body>
@@ -297,6 +315,19 @@
                     <img id="videoImage" alt="Live video feed" />
                     <div class="api-status disabled" id="apiStatus">AI: Not Set</div>
                 </div>
+            </div>
+            
+            <!-- Module 5 Control Panel -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>🎮 Module 5 Display Control</h2>
+                <p style="color: #666; margin-bottom: 15px;">Send test data to Module 5 (Court Display)</p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="test-btn" onclick="sendTestData('normal')" style="background: #10b981;">Normal (5 people)</button>
+                    <button class="test-btn" onclick="sendTestData('full')" style="background: #ef4444;">Full (9 people)</button>
+                    <button class="test-btn" onclick="sendTestData('empty')" style="background: #3b82f6;">Empty (0 people)</button>
+                    <button class="test-btn" onclick="sendTestData('busy')" style="background: #f59e0b;">Busy (7 people)</button>
+                </div>
+                <div id="module5Status" style="margin-top: 10px; color: #666; font-size: 0.9em;"></div>
             </div>
             
             <!-- Activity Log -->
@@ -448,6 +479,27 @@
         socket.on('connect_error', function(error) {
             addLog('Connection error: ' + error, 'error');
         });
+        
+        // Module 5 test data function
+        function sendTestData(scenario) {
+            const statusDiv = document.getElementById('module5Status');
+            statusDiv.textContent = `Sending ${scenario} scenario...`;
+            
+            socket.emit('send_test_data_module5', {
+                court_id: 'basketball_a',
+                scenario: scenario
+            }, function(response) {
+                if (response && response.status === 'success') {
+                    statusDiv.textContent = `✓ Test data sent: ${scenario} scenario`;
+                    statusDiv.style.color = '#10b981';
+                    addLog(`Module 5 test data sent: ${scenario}`, 'success');
+                } else {
+                    statusDiv.textContent = '✗ Failed to send test data';
+                    statusDiv.style.color = '#ef4444';
+                    addLog('Failed to send Module 5 test data', 'error');
+                }
+            });
+        }
         
         // Initial log
         addLog('Dashboard initialized. Waiting for data from Module 1...');

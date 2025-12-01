@@ -121,8 +121,128 @@ def determine_crowd_level(people_count):
         return 'light'
     elif people_count <= 5:
         return 'moderate'
+    elif people_count <= 8:
+        return 'busy'
     else:
         return 'full'
+
+def generate_module5_data(court_id, people_count, crowd_level, confidence):
+    """Generate complete Module 5 display data structure"""
+    occupancy = min(1.0, people_count / 10.0)  # Assume max 10 people = 100%
+    
+    # Generate hourly pattern for today
+    current_hour = datetime.now().hour
+    today_hourly = []
+    for hour in range(8, 22):  # 8 AM to 10 PM
+        if hour < current_hour:
+            # Past data - simulate pattern
+            base_occupancy = 0.3 + 0.4 * (abs(hour - 14) / 6.0)  # Peak at 2 PM
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, base_occupancy + (0.2 if hour == current_hour - 1 else 0))})
+        elif hour == current_hour:
+            # Current hour
+            today_hourly.append({'hour': hour, 'occupancy': occupancy})
+        else:
+            # Future - prediction
+            base_occupancy = 0.3 + 0.4 * (abs(hour - 14) / 6.0)
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, base_occupancy)})
+    
+    # Weekly pattern (same time of day)
+    week_same_time = [
+        {'day': 'Mon', 'occupancy': 0.75},
+        {'day': 'Tue', 'occupancy': 0.65},
+        {'day': 'Wed', 'occupancy': 0.90},
+        {'day': 'Thu', 'occupancy': 0.85},
+        {'day': 'Fri', 'occupancy': 0.95},
+        {'day': 'Sat', 'occupancy': 0.70},
+        {'day': 'Sun', 'occupancy': 0.45}
+    ]
+    
+    # Estimate wait time
+    if crowd_level == 'full':
+        estimated_wait = 25
+    elif crowd_level == 'busy':
+        estimated_wait = 15
+    elif crowd_level == 'moderate':
+        estimated_wait = 5
+    else:
+        estimated_wait = 0
+    
+    return {
+        'court_id': court_id,
+        'timestamp': datetime.now().isoformat(),
+        'current': {
+            'occupancy': occupancy,
+            'people_count': people_count,
+            'crowd_level': crowd_level,
+            'estimated_wait_min': estimated_wait,
+            'confidence': confidence,
+            'last_update': '30 seconds ago'
+        },
+        'weather': {
+            'temp_c': 30,
+            'humidity_percent': 65,
+            'uv_index': 9,
+            'voc_level': 'good',
+            'comfort_score': 3.2,
+            'warnings': ['high_uv'],
+            'recommendations': ['sunscreen', 'hydration']
+        },
+        'patterns': {
+            'today_hourly': today_hourly,
+            'week_same_time': week_same_time
+        },
+        'recommendations': {
+            'best_times_today': ['07:00-09:00', '20:00-22:00'],
+            'avoid_times': ['17:00-19:00'],
+            'next_available_slot': '16:15',
+            'nearby_alternatives': [
+                {
+                    'id': 'basketball_b',
+                    'name': 'Court B',
+                    'distance_m': 200,
+                    'occupancy': 0.30,
+                    'people': 3,
+                    'status': 'light'
+                },
+                {
+                    'id': 'basketball_c',
+                    'name': 'Court C',
+                    'distance_m': 500,
+                    'occupancy': 0.0,
+                    'people': 0,
+                    'status': 'empty'
+                }
+            ]
+        },
+        'info': {
+            'court_name': 'Basketball Court A',
+            'type': 'outdoor',
+            'surface': 'rubber',
+            'lighting_hours': '18:00-22:00',
+            'rating_avg': 4.2,
+            'rating_count': 47,
+            'last_cleaned': datetime.now().replace(hour=8, minute=0).isoformat(),
+            'facilities': ['water_cooler', 'covered_seating', 'restrooms']
+        }
+    }
+
+def generate_module5_test_data(court_id, scenario='normal'):
+    """Generate simulated test data for Module 5 based on scenario"""
+    scenarios = {
+        'normal': {'people': 5, 'level': 'moderate', 'temp': 28, 'wait': 10},
+        'full': {'people': 9, 'level': 'full', 'temp': 32, 'wait': 30},
+        'empty': {'people': 0, 'level': 'empty', 'temp': 25, 'wait': 0},
+        'busy': {'people': 7, 'level': 'busy', 'temp': 30, 'wait': 20}
+    }
+    
+    params = scenarios.get(scenario, scenarios['normal'])
+    
+    return generate_module5_data(
+        court_id,
+        params['people'],
+        params['level'],
+        0.92
+    )
 
 # ========== FLASK ROUTES ==========
 
@@ -147,6 +267,22 @@ def handle_connect():
 def handle_disconnect():
     """Handle client disconnection"""
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Client disconnected: {request.sid}')
+
+@socketio.on('send_test_data_module5')
+def handle_send_test_data_module5(data):
+    """Send simulated test data to Module 5 (triggered from dashboard)"""
+    court_id = data.get('court_id', 'basketball_a')
+    test_scenario = data.get('scenario', 'normal')  # 'normal', 'full', 'empty', 'busy'
+    
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Sending test data to Module 5: {test_scenario}')
+    
+    # Generate test data based on scenario
+    test_data = generate_module5_test_data(court_id, test_scenario)
+    
+    # Send to Module 5
+    socketio.emit('DisplayUpdate', test_data)
+    
+    return {'status': 'success', 'scenario': test_scenario}
 
 @socketio.on('module_register')
 def handle_module_register(data):
@@ -234,14 +370,9 @@ def handle_crowd_video_frame(data):
             'alerts': []  # Could add alert processing here
         })
         
-        socketio.emit('DisplayUpdate', {
-            'court_id': data.get('court_id'),
-            'current': {
-                'people_count': people_count,
-                'crowd_level': crowd_level,
-                'confidence': confidence
-            }
-        })
+        # Send complete Module 5 data
+        display_data = generate_module5_data(data.get('court_id'), people_count, crowd_level, confidence)
+        socketio.emit('DisplayUpdate', display_data)
         
         print(f'[{datetime.now().strftime("%H:%M:%S")}] Processed: {people_count} people, '
               f'{crowd_level}, confidence={confidence:.2f}, noise={noise_db}dB')
