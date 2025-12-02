@@ -120,7 +120,7 @@ def determine_crowd_level(people_count):
     elif people_count <= 2:
         return 'light'
     elif people_count <= 5:
-        return 'moderate'
+        return 'normal'
     elif people_count <= 8:
         return 'busy'
     else:
@@ -162,7 +162,7 @@ def generate_module5_data(court_id, people_count, crowd_level, confidence):
         estimated_wait = 25
     elif crowd_level == 'busy':
         estimated_wait = 15
-    elif crowd_level == 'moderate':
+    elif crowd_level == 'normal':
         estimated_wait = 5
     else:
         estimated_wait = 0
@@ -229,7 +229,7 @@ def generate_module5_data(court_id, people_count, crowd_level, confidence):
 def generate_module5_test_data(court_id, scenario='normal'):
     """Generate simulated test data for Module 5 based on scenario"""
     scenarios = {
-        'normal': {'people': 5, 'level': 'moderate', 'temp': 28, 'wait': 10},
+        'normal': {'people': 5, 'level': 'normal', 'temp': 28, 'wait': 10},
         'full': {'people': 9, 'level': 'full', 'temp': 32, 'wait': 30},
         'empty': {'people': 0, 'level': 'empty', 'temp': 25, 'wait': 0},
         'busy': {'people': 7, 'level': 'busy', 'temp': 30, 'wait': 20}
@@ -283,6 +283,27 @@ def handle_send_test_data_module5(data):
     socketio.emit('DisplayUpdate', test_data)
     
     return {'status': 'success', 'scenario': test_scenario}
+
+@socketio.on('button_press_debug')
+def handle_button_press_debug(data):
+    """Handle button press debug info from Module 5"""
+    module_id = data.get('module_id', 'unknown')
+    button_id = data.get('button_id', 0)
+    button_name = data.get('button_name', 'T?')
+    view = data.get('view', 'unknown')
+    timestamp = data.get('timestamp', datetime.now().isoformat())
+    
+    # Log to console
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] [MODULE5 DEBUG] Button {button_id} ({button_name}) pressed on {module_id} -> View: {view}')
+    
+    # Broadcast to all connected dashboard clients
+    socketio.emit('ButtonPressDebug', {
+        'module_id': module_id,
+        'button_id': button_id,
+        'button_name': button_name,
+        'view': view,
+        'timestamp': timestamp
+    })
 
 @socketio.on('module_register')
 def handle_module_register(data):

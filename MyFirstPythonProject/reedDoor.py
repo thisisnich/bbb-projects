@@ -1,19 +1,31 @@
 import socketio
 import time
 import Adafruit_BBIO.GPIO as GPIO
-import cv2
 import base64
 import threading
+
+# Try to import OpenCV, fall back to fswebcam if not available
+try:
+    import cv2
+    USE_OPENCV = True
+except ImportError:
+    import subprocess
+    USE_OPENCV = False
+    print('[WEBCAM] OpenCV not available, falling back to fswebcam')
 
 sio = socketio.Client()
 GPIO.setup("P8_10", GPIO.IN)
 
 # Webcam settings
-WEBCAM_DEVICE = 0  # OpenCV device index (0 = first camera)
+if USE_OPENCV:
+    WEBCAM_DEVICE = 0  # OpenCV device index (0 = first camera)
+    WEBCAM_FPS = 15  # Frames per second to send (OpenCV allows much higher rates)
+else:
+    WEBCAM_DEVICE = '/dev/video0'  # fswebcam device path
+    WEBCAM_FPS = 5  # Lower FPS for fswebcam due to subprocess overhead
 WEBCAM_WIDTH = 640
 WEBCAM_HEIGHT = 480
-WEBCAM_FPS = 15  # Frames per second to send (OpenCV allows much higher rates)
-# Note: Using OpenCV direct capture instead of fswebcam for better performance
+# Note: OpenCV provides better performance, but fswebcam is a fallback option
 
 @sio.event
 def connect():
@@ -37,22 +49,27 @@ webcam_cap = None
 webcam_lock = threading.Lock()
 
 def init_webcam():
-    """Initialize OpenCV webcam capture."""
+    """Initialize webcam capture (OpenCV or fswebcam)."""
     global webcam_cap
-    try:
-        webcam_cap = cv2.VideoCapture(WEBCAM_DEVICE)
-        if webcam_cap.isOpened():
-            webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, WEBCAM_WIDTH)
-            webcam_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, WEBCAM_HEIGHT)
-            webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
-            print(f'[WEBCAM] Initialized: {WEBCAM_WIDTH}x{WEBCAM_HEIGHT}')
-            return True
-        else:
-            print('[WEBCAM] Failed to open camera')
+    if USE_OPENCV:
+        try:
+            webcam_cap = cv2.VideoCapture(WEBCAM_DEVICE)
+            if webcam_cap.isOpened():
+                webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, WEBCAM_WIDTH)
+                webcam_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, WEBCAM_HEIGHT)
+                webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+                print(f'[WEBCAM] OpenCV initialized: {WEBCAM_WIDTH}x{WEBCAM_HEIGHT}')
+                return True
+            else:
+                print('[WEBCAM] Failed to open camera')
+                return False
+        except Exception as e:
+            print(f'[WEBCAM] OpenCV initialization error: {e}')
             return False
-    except Exception as e:
-        print(f'[WEBCAM] Initialization error: {e}')
-        return False
+    else:
+        # fswebcam doesn't need initialization
+        print(f'[WEBCAM] Using fswebcam (device: {WEBCAM_DEVICE})')
+        return True
 
 def capture_webcam_frame():
     """Capture a single frame from USB webcam using OpenCV."""

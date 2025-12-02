@@ -480,6 +480,17 @@
             addLog('Connection error: ' + error, 'error');
         });
         
+        // Handle Module 5 button press debug events
+        socket.on('ButtonPressDebug', function(data) {
+            const buttonName = data.button_name || `T${data.button_id}`;
+            const view = data.view || 'unknown';
+            const moduleId = data.module_id || 'unknown';
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+            
+            addLog(`[MODULE5] Button ${data.button_id} (${buttonName}) pressed on ${moduleId} → View: ${view}`, 'info');
+            console.log(`[${timestamp}] [MODULE5 DEBUG] Button ${data.button_id} (${buttonName}) → View: ${view}`);
+        });
+        
         // Module 5 test data function
         function sendTestData(scenario) {
             const statusDiv = document.getElementById('module5Status');

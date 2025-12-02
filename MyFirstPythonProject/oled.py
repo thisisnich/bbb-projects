@@ -77,6 +77,11 @@ class OledDisplay:
         self._image = Image.new("1", (self._width, self._height))
         self._draw = ImageDraw.Draw(self._image)
         self._font = ImageFont.load_default()
+        
+        # Clear display immediately to remove any QR code watermark
+        # Some Adafruit libraries may show watermarks on first init
+        self._display.fill(0)  # Clear all pixels
+        self._display.show()
     
     def close(self) -> None:
         """Close the display connection."""
@@ -113,6 +118,8 @@ class OledDisplay:
         """Update the display with current image."""
         if self._display is None:
             self.open()
+        # Clear any potential QR code watermark by ensuring we only show our image
+        # The Adafruit library might add watermarks, so we explicitly set our image
         self._display.image(self._image)  # type: ignore[attr-defined]
         self._display.show()  # type: ignore[attr-defined]
     
