@@ -13,7 +13,7 @@ import os
 import json
 
 # ========== CONFIGURATION ==========
-SERVER_IP = '192.168.72.161'  # CHANGE THIS to your server IP
+SERVER_IP = '192.168.18.89'  # CHANGE THIS to your server IP
 SERVER_PORT = 5000
 GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY', '')  # Set as environment variable
 

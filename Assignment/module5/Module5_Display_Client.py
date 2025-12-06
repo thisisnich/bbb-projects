@@ -2,6 +2,12 @@
 Module 5: Smart Court Information Display - Client
 Displays court information on OLED, Bar Graph, and handles button navigation
 Receives data from cloud server via SocketIO
+
+Click Board Slot Assignments:
+- Slot 1 (I2C): OLED Click (I2C address 0x3C) - main display
+- Slot 2 (ADC): Potentiometer (P9_37) - scrolling control
+- Slot 3 (SPI): 8x8 LED Matrix Click (SPI0: CS=P9_17, SCK=P9_22, MISO=P9_29, MOSI=P9_18) - infographics
+- Slot 4 (ADC): Analog Key Click (P9_39) - 6-button keypad for navigation
 """
 import socketio
 import time
@@ -10,7 +16,7 @@ from datetime import datetime
 import sys
 
 # ========== CONFIGURATION ==========
-SERVER_URL = 'http://192.168.72.161:5000'  # CHANGE THIS to your server IP
+SERVER_URL = 'http://192.168.18.89:5000'  # CHANGE THIS to your server IP
 COURT_ID = 'basketball_a'
 MODULE_ID = 'court_display_5_a'
 OLED_WIDTH = 128
@@ -25,6 +31,9 @@ last_interaction_time = time.time()
 auto_rotation_enabled = True
 rotation_index = 0
 last_button_state = 0  # Track last button state for edge detection
+last_oled_update_time = 0  # Track last OLED update time for debouncing
+OLED_UPDATE_DEBOUNCE_MS = 100  # Minimum time between OLED updates (100ms)
+oled_update_lock = threading.Lock()  # Lock to prevent concurrent OLED updates
 
 # ========== HARDWARE IMPORTS ==========
 # Import OLED library (from MyFirstPythonProject) - same pattern as WebServer.py
@@ -129,16 +138,62 @@ except Exception as e:
     KEYPAD_AVAILABLE = False
     AnalogueKeypad = None
 
+# Import 8x8 LED Matrix (from MyFirstPythonProject) - using importlib since module name starts with number
+try:
+    import importlib.util
+    import os
+    import sys
+    
+    # Find MyFirstPythonProject directory (already computed above)
+    eightx8_file = os.path.join(myproject_dir, '8x8.py')
+    alt_eightx8_file = os.path.join(assignment_dir, 'MyFirstPythonProject', '8x8.py')
+    
+    if os.path.exists(eightx8_file):
+        spec = importlib.util.spec_from_file_location("ledmatrix8x8", eightx8_file)
+        ledmatrix_module = importlib.util.module_from_spec(spec)
+        sys.modules["ledmatrix8x8"] = ledmatrix_module
+        spec.loader.exec_module(ledmatrix_module)
+        LedMatrix8x8 = ledmatrix_module.LedMatrix8x8
+        LEDMATRIX_AVAILABLE = True
+        print(f"[LEDMATRIX] 8x8 LED matrix library found at {eightx8_file}")
+    elif os.path.exists(alt_eightx8_file):
+        spec = importlib.util.spec_from_file_location("ledmatrix8x8", alt_eightx8_file)
+        ledmatrix_module = importlib.util.module_from_spec(spec)
+        sys.modules["ledmatrix8x8"] = ledmatrix_module
+        spec.loader.exec_module(ledmatrix_module)
+        LedMatrix8x8 = ledmatrix_module.LedMatrix8x8
+        LEDMATRIX_AVAILABLE = True
+        print(f"[LEDMATRIX] 8x8 LED matrix library found at {alt_eightx8_file}")
+    else:
+        print(f"[WARNING] 8x8 LED matrix library not found")
+        print(f"[WARNING] Tried: {eightx8_file}")
+        print(f"[WARNING] Tried: {alt_eightx8_file}")
+        LEDMATRIX_AVAILABLE = False
+        LedMatrix8x8 = None
+except ImportError as e:
+    print(f"[WARNING] 8x8 LED matrix library import failed: {e}")
+    import traceback
+    traceback.print_exc()
+    LEDMATRIX_AVAILABLE = False
+    LedMatrix8x8 = None
+except Exception as e:
+    print(f"[WARNING] Error setting up 8x8 LED matrix import: {e}")
+    import traceback
+    traceback.print_exc()
+    LEDMATRIX_AVAILABLE = False
+    LedMatrix8x8 = None
+
 # Global hardware objects
 oled_display = None
 analogue_keypad = None
 pot_adc = None  # Potentiometer ADC
 POT_AVAILABLE = False
+led_matrix = None  # 8x8 LED Matrix
 
 def init_oled():
-    """Initialize OLED display - Slot 3 (I2C) - using same pattern as WebServer.py"""
+    """Initialize OLED display - Slot 1 (I2C) - using same pattern as WebServer.py"""
     global oled_display
-    print("[OLED] Initializing OLED display (Slot 3 - I2C)...")
+    print("[OLED] Initializing OLED display (Slot 1 - I2C)...")
     
     if not OLED_AVAILABLE:
         print("[OLED] OLED library not available - using console output only")
@@ -169,15 +224,40 @@ def init_oled():
         oled_display = None
 
 def init_bar_graph():
-    """Initialize Bar Graph 2 Click or 8x8 LED Matrix"""
-    print("[BARGRAPH] Initializing bar graph...")
-    # TODO: Will add later - focus on OLED first
-    pass
+    """Initialize 8x8 LED Matrix (Slot 3 - SPI)"""
+    global led_matrix
+    print("[LEDMATRIX] Initializing 8x8 LED matrix (Slot 3 - SPI)...")
+    
+    if not LEDMATRIX_AVAILABLE:
+        print("[LEDMATRIX] 8x8 LED matrix library not available - matrix disabled")
+        return
+    
+    try:
+        # Use same pattern as OLED: lazy_hw=True, then open()
+        # Slot 3 SPI configuration: CS=P9_17, SCK=P9_22, MISO=P9_29, MOSI=P9_18
+        # These pins correspond to SPI0 (bus 0) on BeagleBone
+        print("[LEDMATRIX] Creating LedMatrix8x8 with lazy_hw=True...")
+        print("[LEDMATRIX] Slot 3 SPI pins: CS=P9_17, SCK=P9_22, MISO=P9_29, MOSI=P9_18")
+        led_matrix = LedMatrix8x8(bus=0, device=0, lazy_hw=True)  # SPI0, device 0
+        print("[LEDMATRIX] Calling open()...")
+        led_matrix.open()
+        print("[LEDMATRIX] 8x8 LED matrix initialized successfully")
+        
+        # Test display with a simple pattern
+        led_matrix.set_preset("smiley")
+        time.sleep(0.5)
+        led_matrix.clear()
+    except Exception as e:
+        print(f"[LEDMATRIX] Error initializing 8x8 LED matrix: {e}")
+        print(f"[LEDMATRIX] Error details: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        led_matrix = None
 
 def init_buttons():
-    """Initialize Analog Key Click (6 buttons via AnalogueKeypad)"""
+    """Initialize Analog Key Click (6 buttons via AnalogueKeypad) - Slot 4 (ADC)"""
     global analogue_keypad
-    print("[BUTTONS] Initializing analogue keypad (6 buttons)...")
+    print("[BUTTONS] Initializing analogue keypad (6 buttons) - Slot 4 (ADC)...")
     
     if not KEYPAD_AVAILABLE:
         print("[BUTTONS] Analogue keypad library not available - buttons disabled")
@@ -185,7 +265,7 @@ def init_buttons():
     
     try:
         # Use same pattern as OLED: lazy_hw=True, then open()
-        # Default pin is P9_40 (ADC)
+        # Slot 4 ADC pin: P9_39
         # Use thresholds from analogueKey.py (exact matches)
         thresholds = {
             "T1": (0.90, 1.10),   # T1: > 0.90 and < 1.10
@@ -197,7 +277,8 @@ def init_buttons():
             "NONE": (0.00, 0.10)  # NONE: >= 0.00 and < 0.10
         }
         print("[BUTTONS] Creating AnalogueKeypad with lazy_hw=True and custom thresholds...")
-        analogue_keypad = AnalogueKeypad(lazy_hw=True, thresholds=thresholds, debounce_ms=50)
+        print("[BUTTONS] Slot 4 ADC pin: P9_39")
+        analogue_keypad = AnalogueKeypad(pin="P9_39", lazy_hw=True, thresholds=thresholds, debounce_ms=50)
         print("[BUTTONS] Calling open()...")
         analogue_keypad.open()
         print("[BUTTONS] Analogue keypad initialized successfully")
@@ -210,9 +291,9 @@ def init_buttons():
         analogue_keypad = None
 
 def init_potentiometer():
-    """Initialize potentiometer on P9_38 for scrolling control"""
+    """Initialize potentiometer on P9_37 (Slot 2 ADC) for scrolling control"""
     global pot_adc, POT_AVAILABLE
-    print("[POT] Initializing potentiometer (P9_38) for scrolling...")
+    print("[POT] Initializing potentiometer (P9_37, Slot 2 ADC) for scrolling...")
     
     try:
         import Adafruit_BBIO.ADC as ADC
@@ -241,7 +322,7 @@ def read_potentiometer():
         return (0.0, 0.0)
     
     try:
-        raw_digital = pot_adc.read("P9_38")
+        raw_digital = pot_adc.read("P9_37")
         raw_voltage = raw_digital * 1.8
         
         # Map pot range (0.17-1.0) to full range (0.0-1.0)
@@ -262,11 +343,10 @@ def read_potentiometer():
         print(f"[POT] Error reading potentiometer: {e}")
         return (0.0, 0.0)
 
-def init_buzz():
-    """Initialize Buzz 2 Click"""
-    print("[BUZZ] Initializing buzzer...")
-    # TODO: Will add later - focus on OLED first
-    pass
+# def init_buzz():
+#     """Initialize Buzz 2 Click - NOT AVAILABLE"""
+#     print("[BUZZ] Buzzer not available - skipping")
+#     pass
 
 def read_button():
     """Read which button is pressed (1-6) or 0 if none
@@ -333,8 +413,8 @@ def read_button():
         return 0
 
 def show_connecting():
-    """Display 'Connecting...' message on OLED (compact, 2 lines)"""
-    global oled_display
+    """Display 'Connecting...' message on OLED and loading animation on 8x8 matrix"""
+    global oled_display, led_matrix
     if oled_display:
         try:
             oled_display.clear()  # clear() calls show()
@@ -343,9 +423,76 @@ def show_connecting():
             # No need to call show() again - draw_centered_text() already does it
         except Exception as e:
             print(f"[OLED] Error showing connecting: {e}")
+    
+    # Show loading animation on 8x8 LED matrix
+    if led_matrix:
+        try:
+            # Start a spinning loading animation
+            show_matrix_loading()
+        except Exception as e:
+            print(f"[LEDMATRIX] Error showing loading: {e}")
+
+# Global variable to control loading animation
+_loading_animation_active = False
+_loading_thread = None
+
+def show_matrix_loading():
+    """Display a spinning loading animation on 8x8 LED matrix"""
+    global led_matrix, _loading_animation_active, _loading_thread
+    if not led_matrix:
+        return
+    
+    try:
+        # Stop any existing animation
+        stop_matrix_loading()
+        
+        # Create a spinning pattern - rotating around the center
+        spinning_patterns = [
+            # Rotating cross pattern (4 frames)
+            [0b00000000, 0b00000000, 0b00011000, 0b00011000, 0b00011000, 0b00011000, 0b00000000, 0b00000000],  # |
+            [0b00000000, 0b00000000, 0b00001100, 0b00001100, 0b00110000, 0b00110000, 0b00000000, 0b00000000],  # /
+            [0b00000000, 0b00000000, 0b00111100, 0b00000000, 0b00000000, 0b00111100, 0b00000000, 0b00000000],  # -
+            [0b00000000, 0b00000000, 0b00110000, 0b00110000, 0b00001100, 0b00001100, 0b00000000, 0b00000000],  # \
+        ]
+        
+        def loading_animation():
+            """Animate a spinning loading pattern"""
+            global _loading_animation_active
+            frame = 0
+            while _loading_animation_active:
+                try:
+                    pattern = spinning_patterns[frame % len(spinning_patterns)]
+                    if led_matrix:
+                        led_matrix.set_pattern(pattern)
+                    frame += 1
+                    time.sleep(0.2)  # 200ms per frame
+                except:
+                    break
+        
+        # Start animation in background thread
+        _loading_animation_active = True
+        _loading_thread = threading.Thread(target=loading_animation, daemon=True)
+        _loading_thread.start()
+        print("[LEDMATRIX] Loading animation started")
+    except Exception as e:
+        print(f"[LEDMATRIX] Error starting loading animation: {e}")
+
+def stop_matrix_loading():
+    """Stop the loading animation on 8x8 LED matrix"""
+    global led_matrix, _loading_animation_active, _loading_thread
+    try:
+        _loading_animation_active = False
+        if _loading_thread and _loading_thread.is_alive():
+            # Wait a bit for thread to stop
+            time.sleep(0.3)
+        if led_matrix:
+            led_matrix.clear()
+        print("[LEDMATRIX] Loading animation stopped")
+    except Exception as e:
+        print(f"[LEDMATRIX] Error stopping loading animation: {e}")
 
 def show_connected():
-    """Display 'Connected' message on OLED (compact, 2 lines)"""
+    """Display 'Connected' message on OLED and stop loading animation on 8x8 matrix"""
     global oled_display
     if oled_display:
         try:
@@ -355,9 +502,20 @@ def show_connected():
             # No need to call show() again - draw_centered_text() already does it
         except Exception as e:
             print(f"[OLED] Error showing connected: {e}")
+    
+    # Stop loading animation and show checkmark briefly
+    stop_matrix_loading()
+    if led_matrix:
+        try:
+            # Show checkmark to indicate successful connection
+            led_matrix.set_preset("check")
+            time.sleep(0.5)
+            led_matrix.clear()
+        except Exception as e:
+            print(f"[LEDMATRIX] Error showing connected indicator: {e}")
 
 def show_connection_error():
-    """Display connection error on OLED (compact, 3 lines)"""
+    """Display connection error on OLED and stop loading animation on 8x8 matrix"""
     global oled_display
     if oled_display:
         try:
@@ -368,10 +526,19 @@ def show_connection_error():
             # No need to call show() again - draw_centered_text() already does it
         except Exception as e:
             print(f"[OLED] Error showing error: {e}")
+    
+    # Stop loading animation and show X to indicate error
+    stop_matrix_loading()
+    if led_matrix:
+        try:
+            # Show X to indicate connection error
+            led_matrix.set_preset("x")
+        except Exception as e:
+            print(f"[LEDMATRIX] Error showing error indicator: {e}")
 
 def update_oled_display(view, data):
-    """Update OLED display with current view"""
-    global oled_display
+    """Update OLED display and 8x8 LED matrix with current view"""
+    global oled_display, last_oled_update_time, oled_update_lock
     
     if not data:
         print("[OLED] No data to display")
@@ -379,47 +546,61 @@ def update_oled_display(view, data):
     
     if not oled_display:
         print("[OLED] OLED display not initialized - skipping update")
-        return
+    else:
+        print(f"[OLED] Updating view: {view}, OLED available: {oled_display is not None}")
     
-    print(f"[OLED] Updating view: {view}, OLED available: {oled_display is not None}")
-    
-    try:
-        if view == 'status':
-            show_current_status(data)
-        elif view == 'history_today':
-            show_today_pattern(data)
-        elif view == 'history_week':
-            show_weekly_comparison(data)
-        elif view == 'weather':
-            show_weather_details(data)
-        elif view == 'alternatives':
-            show_alternatives(data)
-        elif view == 'info':
-            show_court_info(data)
-        else:
-            print(f"[OLED] Unknown view: {view}")
-            # Show error on OLED
+    # Use lock to prevent concurrent updates
+    with oled_update_lock:
+        # Debounce: prevent rapid updates (minimum 100ms between updates)
+        current_time = time.time() * 1000  # Convert to milliseconds
+        time_since_last_update = current_time - last_oled_update_time
+        if time_since_last_update < OLED_UPDATE_DEBOUNCE_MS:
+            # Too soon, skip this update
+            print(f"[OLED] Update debounced (last update {time_since_last_update:.1f}ms ago)")
+            return
+        
+        last_oled_update_time = current_time
+        
+        try:
+            if view == 'status':
+                show_current_status(data)
+            elif view == 'history_today':
+                show_today_pattern(data)
+            elif view == 'history_week':
+                show_weekly_comparison(data)
+            elif view == 'weather':
+                show_weather_details(data)
+            elif view == 'alternatives':
+                show_alternatives(data)
+            elif view == 'info':
+                show_court_info(data)
+            else:
+                print(f"[OLED] Unknown view: {view}")
+                # Show error on OLED
+                if oled_display:
+                    try:
+                        oled_display.clear()  # clear() calls show()
+                        oled_display.draw_text("ERROR", 0, 0)  # draw_text() calls show()
+                        oled_display.draw_text(f"View: {view[:10]}", 0, 8)  # draw_text() calls show()
+                        # No need to call show() again - draw_text() already does it
+                    except:
+                        pass
+        except Exception as e:
+            print(f"[OLED] Error in update_oled_display: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to show error on OLED
             if oled_display:
                 try:
                     oled_display.clear()  # clear() calls show()
                     oled_display.draw_text("ERROR", 0, 0)  # draw_text() calls show()
-                    oled_display.draw_text(f"View: {view[:10]}", 0, 8)  # draw_text() calls show()
+                    oled_display.draw_text(str(e)[:20], 0, 8)  # draw_text() calls show()
                     # No need to call show() again - draw_text() already does it
                 except:
                     pass
-    except Exception as e:
-        print(f"[OLED] Error in update_oled_display: {e}")
-        import traceback
-        traceback.print_exc()
-        # Try to show error on OLED
-        if oled_display:
-            try:
-                oled_display.clear()  # clear() calls show()
-                oled_display.draw_text("ERROR", 0, 0)  # draw_text() calls show()
-                oled_display.draw_text(str(e)[:20], 0, 8)  # draw_text() calls show()
-                # No need to call show() again - draw_text() already does it
-            except:
-                pass
+    
+    # Also update 8x8 LED matrix (outside the lock to avoid blocking)
+    update_led_matrix(view, data)
 
 def show_current_status(data):
     """Display View 1: Current Status (scrollable)"""
@@ -486,8 +667,10 @@ def show_current_status(data):
                     oled_display._draw.text((0, y), status_lines[idx], font=oled_display._font, fill=1)
                     y += 8
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing status: {e}")
             import traceback
@@ -570,8 +753,10 @@ def show_today_pattern(data):
                     oled_display._draw.text((0, y), f"{hour_12:2d}{am_pm}:{int(occ*100)}%", font=oled_display._font, fill=1)
                     y += 8
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing pattern: {e}")
     
@@ -637,8 +822,10 @@ def show_weekly_comparison(data):
                     oled_display._draw.text((0, y), f"{day_name}:{int(occ*100)}%", font=oled_display._font, fill=1)
                     y += 8
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing weekly: {e}")
     
@@ -688,8 +875,10 @@ def show_weather_details(data):
             # Line 3: UV and Comfort
             oled_display._draw.text((0, 16), f"UV:{uv} C:{comfort}/5", font=oled_display._font, fill=1)
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing weather: {e}")
     
@@ -757,8 +946,10 @@ def show_alternatives(data):
             else:
                 oled_display._draw.text((0, 8), "None", font=oled_display._font, fill=1)
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing alternatives: {e}")
     
@@ -847,8 +1038,10 @@ def show_court_info(data):
                     oled_display._draw.text((0, y), info_lines[idx], font=oled_display._font, fill=1)
                     y += 8
             
-            # Show once at the end
+            # Show once at the end - add small delay to ensure display is ready
+            time.sleep(0.01)  # 10ms delay before show()
             oled_display.show()
+            time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing info: {e}")
     
@@ -872,25 +1065,245 @@ def show_court_info(data):
     └─────────────────────┘
     """)
 
+# ========== 8x8 LED MATRIX VISUALIZATIONS ==========
+
+def show_matrix_status(data):
+    """Display crowd level on 8x8 matrix for Status view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        current = data.get('current', {})
+        level = current.get('crowd_level', 'unknown').lower()
+        occupancy = current.get('occupancy', 0)
+        
+        # Create pattern based on crowd level
+        # Show vertical bars representing occupancy (0-100%)
+        pattern = [0] * 8
+        bars = int(occupancy * 8)  # 0-8 bars
+        
+        # Fill from bottom up (row 7 is bottom)
+        for row in range(7, 7 - bars, -1):
+            if row >= 0:
+                # Fill entire row (all 8 columns)
+                pattern[row] = 0xFF
+        
+        # Add level indicator: different patterns for different levels
+        if level == 'empty':
+            # Green - show checkmark
+            led_matrix.set_preset("check")
+        elif level == 'light':
+            # Yellow - show 1-2 bars
+            led_matrix.set_pattern(pattern)
+        elif level == 'normal':
+            # Orange - show 3-4 bars
+            led_matrix.set_pattern(pattern)
+        elif level == 'busy':
+            # Red - show 5-6 bars
+            led_matrix.set_pattern(pattern)
+        elif level == 'full':
+            # Red - show full or X
+            led_matrix.set_preset("x")
+        else:
+            # Unknown - show pattern based on occupancy
+            led_matrix.set_pattern(pattern)
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing status: {e}")
+
+def show_matrix_today_pattern(data):
+    """Display hourly occupancy pattern on 8x8 matrix for Today view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        patterns = data.get('patterns', {})
+        hourly = patterns.get('today_hourly', [])
+        
+        # Show 8 hours as 8 vertical bars (one column per hour)
+        # Each bar height represents occupancy (0-100%)
+        pattern = [0] * 8
+        
+        # Get current hour's data and surrounding hours (up to 8 hours)
+        for col in range(8):  # 8 columns
+            if col < len(hourly):
+                hour_data = hourly[col]
+                occupancy = hour_data.get('occupancy', 0)
+                bars = int(occupancy * 8)  # 0-8 bars high
+                
+                # Set bits from bottom up for this column
+                # Column col (0-7) maps to bit position (7-col) in each row
+                bit_pos = 7 - col
+                for row in range(7, 7 - bars, -1):
+                    if row >= 0:
+                        pattern[row] |= (1 << bit_pos)
+        
+        led_matrix.set_pattern(pattern)
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing today pattern: {e}")
+
+def show_matrix_weekly_comparison(data):
+    """Display weekly comparison on 8x8 matrix for Weekly view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        patterns = data.get('patterns', {})
+        weekly = patterns.get('week_same_time', [])
+        
+        # Show 7 days as 7 vertical bars (one column per day, skip column 0 or 7)
+        # Each bar height represents occupancy (0-100%)
+        pattern = [0] * 8
+        
+        # Map 7 days to 7 columns (columns 1-7, skip 0)
+        for day_idx in range(min(7, len(weekly))):
+            col = day_idx + 1  # Columns 1-7
+            day_data = weekly[day_idx]
+            occupancy = day_data.get('occupancy', 0)
+            bars = int(occupancy * 8)  # 0-8 bars high
+            
+            # Set bits from bottom up for this column
+            bit_pos = 7 - col
+            for row in range(7, 7 - bars, -1):
+                if row >= 0:
+                    pattern[row] |= (1 << bit_pos)
+        
+        led_matrix.set_pattern(pattern)
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing weekly comparison: {e}")
+
+def show_matrix_weather(data):
+    """Display weather indicator on 8x8 matrix for Weather view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        weather = data.get('weather', {})
+        temp = weather.get('temp_c', 20)
+        uv = weather.get('uv_index', 0)
+        comfort = weather.get('comfort_score', 0)
+        
+        # Show weather icon based on conditions
+        # Temperature indicator: show as bars (cold = few bars, hot = many bars)
+        # Or show sun icon for good weather, cloud for bad
+        
+        if temp > 25 and uv > 5:
+            # Hot and sunny - show sun (filled circle)
+            led_matrix.set_preset("circle")
+        elif temp < 10:
+            # Cold - show arrow down
+            led_matrix.set_preset("arrow_down")
+        elif comfort >= 4:
+            # Good comfort - show smiley
+            led_matrix.set_preset("smiley")
+        elif comfort <= 2:
+            # Poor comfort - show sad
+            led_matrix.set_preset("sad")
+        else:
+            # Moderate - show temperature as bars
+            # Map temp (0-40C) to 0-8 bars
+            bars = int((temp / 40.0) * 8)
+            bars = max(1, min(8, bars))  # Clamp to 1-8
+            pattern = [0] * 8
+            for row in range(7, 7 - bars, -1):
+                if row >= 0:
+                    pattern[row] = 0xFF
+            led_matrix.set_pattern(pattern)
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing weather: {e}")
+
+def show_matrix_alternatives(data):
+    """Display alternatives indicator on 8x8 matrix for Alternatives view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        recommendations = data.get('recommendations', {})
+        alternatives = recommendations.get('nearby_alternatives', [])
+        
+        # Show indicator based on alternatives
+        if len(alternatives) == 0:
+            # No alternatives - show X
+            led_matrix.set_preset("x")
+        else:
+            # Has alternatives - show arrow right (pointing to alternatives)
+            led_matrix.set_preset("arrow_right")
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing alternatives: {e}")
+
+def show_matrix_info(data):
+    """Display info indicator on 8x8 matrix for Info view"""
+    global led_matrix
+    if not led_matrix:
+        return
+    
+    try:
+        info = data.get('info', {})
+        rating = info.get('rating_avg', 0)
+        
+        # Show info icon - use circle or diamond
+        # Or show rating as stars (1-5 stars as bars)
+        if rating >= 4.5:
+            # Excellent - show heart
+            led_matrix.set_preset("heart")
+        elif rating >= 3.5:
+            # Good - show circle
+            led_matrix.set_preset("circle")
+        elif rating >= 2.5:
+            # Fair - show diamond
+            led_matrix.set_preset("diamond")
+        else:
+            # Poor - show square
+            led_matrix.set_preset("square")
+    except Exception as e:
+        print(f"[LEDMATRIX] Error showing info: {e}")
+
+def update_led_matrix(view, data):
+    """Update 8x8 LED matrix based on current view"""
+    global led_matrix
+    
+    if not led_matrix or not data:
+        return
+    
+    try:
+        if view == 'status':
+            show_matrix_status(data)
+        elif view == 'history_today':
+            show_matrix_today_pattern(data)
+        elif view == 'history_week':
+            show_matrix_weekly_comparison(data)
+        elif view == 'weather':
+            show_matrix_weather(data)
+        elif view == 'alternatives':
+            show_matrix_alternatives(data)
+        elif view == 'info':
+            show_matrix_info(data)
+        else:
+            # Unknown view - clear matrix
+            led_matrix.clear()
+    except Exception as e:
+        print(f"[LEDMATRIX] Error updating matrix: {e}")
+        import traceback
+        traceback.print_exc()
+
 def update_bar_graph(data):
-    """Update Bar Graph 2 Click or 8x8 LED Matrix with hourly pattern"""
-    patterns = data.get('patterns', {})
-    hourly = patterns.get('today_hourly', [])
+    """Update Bar Graph 2 Click or 8x8 LED Matrix with hourly pattern
     
-    # TODO: Actually update bar graph hardware
-    # Example: For 8 bars showing 8-hour window
-    print(f"[BARGRAPH] Updating bar graph with {len(hourly)} data points")
-    
-    # Show occupancy levels as bars
-    for i, hour_data in enumerate(hourly[:8]):  # Show 8 hours
-        occupancy = hour_data.get('occupancy', 0)
-        bar_level = int(occupancy * 8)  # Scale to 8 levels
-        print(f"  Hour {i}: {'█' * bar_level}{'░' * (8 - bar_level)} ({int(occupancy*100)}%)")
+    Note: This function is kept for compatibility but now uses update_led_matrix()
+    """
+    # Delegate to update_led_matrix with current view
+    if current_view and current_data:
+        update_led_matrix(current_view, current_data)
 
 def buzz_beep(count=1):
-    """Play buzzer beep"""
-    # TODO: Actually trigger buzzer
-    print(f"[BUZZ] Beep x{count}")
+    """Play buzzer beep - NOT AVAILABLE (buzzer not connected)"""
+    # Buzzer not available - just log for debugging
+    # print(f"[BUZZ] Beep x{count} (buzzer not available)")
+    pass
 
 def get_level_emoji(level):
     """Get emoji for crowd level"""
@@ -936,10 +1349,8 @@ def DisplayUpdate(data):
     
     current_data = data
     
-    # Update bar graph (always visible)
-    update_bar_graph(data)
-    
-    # Update OLED based on current view
+    # Update OLED and 8x8 LED matrix based on current view
+    # (update_oled_display now also calls update_led_matrix internally)
     print(f'[DEBUG] Updating OLED with view: {current_view}, OLED available: {oled_display is not None}')
     update_oled_display(current_view, data)
 
@@ -1147,8 +1558,8 @@ def main():
         init_oled()
         init_buttons()  # Initialize analogue keypad
         init_potentiometer()  # Initialize potentiometer for scrolling
-        # init_bar_graph()  # Will add later
-        # init_buzz()        # Will add later
+        init_bar_graph()  # Initialize 8x8 LED matrix (Slot 3)
+        # init_buzz()        # Not available - buzzer not connected
         if oled_display:
             print("\n[OK] OLED initialized successfully")
         else:
@@ -1161,6 +1572,10 @@ def main():
             print("[OK] Potentiometer initialized successfully (scrolling enabled)")
         else:
             print("[WARNING] Potentiometer not initialized - scrolling disabled")
+        if led_matrix:
+            print("[OK] 8x8 LED matrix initialized successfully (Slot 3)")
+        else:
+            print("[WARNING] 8x8 LED matrix not initialized - matrix disabled")
     except Exception as e:
         print(f"\n[WARNING] Hardware initialization error: {e}")
         print("Continuing with software simulation...")
@@ -1238,6 +1653,12 @@ def main():
                 print("[BUTTONS] Analogue keypad closed")
             except Exception as e:
                 print(f"[BUTTONS] Error closing keypad: {e}")
+        if led_matrix:
+            try:
+                led_matrix.close()
+                print("[LEDMATRIX] 8x8 LED matrix closed")
+            except Exception as e:
+                print(f"[LEDMATRIX] Error closing matrix: {e}")
         print("Client disconnected. Goodbye!")
 
 if __name__ == '__main__':
