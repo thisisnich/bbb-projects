@@ -226,23 +226,152 @@ def generate_module5_data(court_id, people_count, crowd_level, confidence):
         }
     }
 
-def generate_module5_test_data(court_id, scenario='normal'):
-    """Generate simulated test data for Module 5 based on scenario"""
+def generate_module5_test_data(court_id, scenario='normal', custom_data=None):
+    """Generate simulated test data for Module 5 based on scenario
+    
+    Args:
+        court_id: Court identifier
+        scenario: Preset scenario ('normal', 'full', 'empty', 'busy', 'custom')
+        custom_data: Optional dict with custom values to override defaults
+    """
     scenarios = {
-        'normal': {'people': 5, 'level': 'normal', 'temp': 28, 'wait': 10},
-        'full': {'people': 9, 'level': 'full', 'temp': 32, 'wait': 30},
-        'empty': {'people': 0, 'level': 'empty', 'temp': 25, 'wait': 0},
-        'busy': {'people': 7, 'level': 'busy', 'temp': 30, 'wait': 20}
+        'normal': {
+            'people': 5, 'level': 'normal', 'temp': 28, 'wait': 10,
+            'humidity': 60, 'uv': 6, 'comfort': 3.5, 'rating': 4.2,
+            'hourly_peak': 0.65, 'weekly_peak': 0.75, 'alternatives': 2
+        },
+        'full': {
+            'people': 9, 'level': 'full', 'temp': 32, 'wait': 30,
+            'humidity': 70, 'uv': 9, 'comfort': 2.5, 'rating': 3.8,
+            'hourly_peak': 0.95, 'weekly_peak': 0.90, 'alternatives': 3
+        },
+        'empty': {
+            'people': 0, 'level': 'empty', 'temp': 25, 'wait': 0,
+            'humidity': 50, 'uv': 4, 'comfort': 4.5, 'rating': 4.8,
+            'hourly_peak': 0.15, 'weekly_peak': 0.20, 'alternatives': 1
+        },
+        'busy': {
+            'people': 7, 'level': 'busy', 'temp': 30, 'wait': 20,
+            'humidity': 65, 'uv': 8, 'comfort': 3.0, 'rating': 4.0,
+            'hourly_peak': 0.80, 'weekly_peak': 0.85, 'alternatives': 2
+        }
     }
     
-    params = scenarios.get(scenario, scenarios['normal'])
+    params = scenarios.get(scenario, scenarios['normal']).copy()
     
-    return generate_module5_data(
-        court_id,
-        params['people'],
-        params['level'],
-        0.92
-    )
+    # Override with custom data if provided
+    if custom_data:
+        params.update(custom_data)
+        # Ensure facilities is a list (handle both string and list inputs)
+        if 'facilities' in params:
+            if isinstance(params['facilities'], str):
+                params['facilities'] = [f.strip() for f in params['facilities'].split(',') if f.strip()]
+            elif not isinstance(params['facilities'], list):
+                params['facilities'] = ['Water', 'Seating', 'Restroom', 'Parking']  # Default
+    
+    # Generate data with custom parameters
+    occupancy = min(1.0, params['people'] / 10.0)
+    current_hour = datetime.now().hour
+    
+    # Generate hourly pattern with custom peak
+    # Check if custom hourly values were provided
+    custom_hourly_raw = params.get('custom_hourly', {})
+    
+    # Convert string keys to integers (JavaScript sends keys as strings in JSON)
+    custom_hourly = {}
+    if custom_hourly_raw:
+        for key, value in custom_hourly_raw.items():
+            try:
+                hour_int = int(key)  # Convert string '8' to int 8
+                custom_hourly[hour_int] = float(value)  # Ensure value is float
+            except (ValueError, TypeError):
+                # Skip invalid entries
+                continue
+        if custom_hourly:
+            print(f'[DEBUG] Custom hourly values converted: {custom_hourly}')
+    
+    today_hourly = []
+    for hour in range(8, 22):  # 8 AM to 10 PM
+        # Use custom value if provided, otherwise generate automatically
+        if hour in custom_hourly:
+            today_hourly.append({'hour': hour, 'occupancy': custom_hourly[hour]})
+        elif hour < current_hour:
+            base_occupancy = params['hourly_peak'] * (1.0 - abs(hour - 14) / 6.0 * 0.5)
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
+        elif hour == current_hour:
+            today_hourly.append({'hour': hour, 'occupancy': occupancy})
+        else:
+            base_occupancy = params['hourly_peak'] * (1.0 - abs(hour - 14) / 6.0 * 0.5)
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
+    
+    # Weekly pattern with custom peak
+    week_same_time = [
+        {'day': 'Mon', 'occupancy': params['weekly_peak'] * 0.9},
+        {'day': 'Tue', 'occupancy': params['weekly_peak'] * 0.85},
+        {'day': 'Wed', 'occupancy': params['weekly_peak']},
+        {'day': 'Thu', 'occupancy': params['weekly_peak'] * 0.95},
+        {'day': 'Fri', 'occupancy': params['weekly_peak'] * 1.0},
+        {'day': 'Sat', 'occupancy': params['weekly_peak'] * 0.75},
+        {'day': 'Sun', 'occupancy': params['weekly_peak'] * 0.5}
+    ]
+    
+    # Generate alternatives based on count
+    alternatives = []
+    alt_names = ['Court B', 'Court C', 'Court D']
+    alt_statuses = ['light', 'normal', 'busy']
+    for i in range(min(params['alternatives'], 3)):
+        alternatives.append({
+            'id': f'basketball_{chr(98+i)}',  # b, c, d
+            'name': alt_names[i],
+            'distance_m': 200 + (i * 300),
+            'occupancy': 0.2 + (i * 0.15),
+            'people': i + 2,
+            'status': alt_statuses[i % len(alt_statuses)]
+        })
+    
+    return {
+        'court_id': court_id,
+        'timestamp': datetime.now().isoformat(),
+        'current': {
+            'occupancy': occupancy,
+            'people_count': params['people'],
+            'crowd_level': params['level'],
+            'estimated_wait_min': params['wait'],
+            'confidence': 0.92,
+            'last_update': '30 seconds ago'
+        },
+        'weather': {
+            'temp_c': params['temp'],
+            'humidity_percent': params['humidity'],
+            'uv_index': params['uv'],
+            'voc_level': params.get('air_quality', 'good'),  # Use custom air quality if provided
+            'comfort_score': params['comfort'],
+            'warnings': ['high_uv'] if params['uv'] > 7 else [],
+            'recommendations': ['sunscreen', 'hydration'] if params['uv'] > 7 else ['hydration']
+        },
+        'patterns': {
+            'today_hourly': today_hourly,
+            'week_same_time': week_same_time
+        },
+        'recommendations': {
+            'best_times_today': ['07:00-09:00', '20:00-22:00'],
+            'avoid_times': ['17:00-19:00'],
+            'next_available_slot': '16:15',
+            'nearby_alternatives': alternatives
+        },
+        'info': {
+            'court_name': 'Basketball Court A',
+            'type': 'outdoor',
+            'surface': params.get('surface', 'Concrete'),  # Use custom surface if provided
+            'lighting_hours': params.get('lighting_hours', '6AM-10PM'),  # Use custom lighting if provided
+            'rating_avg': params['rating'],
+            'rating_count': 47,
+            'last_cleaned': params.get('last_cleaned', 'Today'),  # Use custom last_cleaned if provided
+            'size': params.get('size', 'Full court'),  # Use custom size if provided
+            'capacity': params.get('capacity', 10),  # Use custom capacity if provided
+            'facilities': params.get('facilities', ['Water', 'Seating', 'Restroom', 'Parking'])  # Use custom facilities if provided
+        }
+    }
 
 # ========== FLASK ROUTES ==========
 
@@ -272,12 +401,15 @@ def handle_disconnect():
 def handle_send_test_data_module5(data):
     """Send simulated test data to Module 5 (triggered from dashboard)"""
     court_id = data.get('court_id', 'basketball_a')
-    test_scenario = data.get('scenario', 'normal')  # 'normal', 'full', 'empty', 'busy'
+    test_scenario = data.get('scenario', 'normal')  # 'normal', 'full', 'empty', 'busy', 'custom'
+    custom_data = data.get('custom_data', None)  # Optional custom overrides
     
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Sending test data to Module 5: {test_scenario}')
+    if custom_data:
+        print(f'  Custom overrides: {custom_data}')
     
     # Generate test data based on scenario
-    test_data = generate_module5_test_data(court_id, test_scenario)
+    test_data = generate_module5_test_data(court_id, test_scenario, custom_data)
     
     # Send to Module 5
     socketio.emit('DisplayUpdate', test_data)

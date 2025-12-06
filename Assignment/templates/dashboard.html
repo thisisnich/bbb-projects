@@ -321,11 +321,149 @@
             <div class="card" style="grid-column: 1 / -1;">
                 <h2>🎮 Module 5 Display Control</h2>
                 <p style="color: #666; margin-bottom: 15px;">Send test data to Module 5 (Court Display)</p>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
                     <button class="test-btn" onclick="sendTestData('normal')" style="background: #10b981;">Normal (5 people)</button>
                     <button class="test-btn" onclick="sendTestData('full')" style="background: #ef4444;">Full (9 people)</button>
                     <button class="test-btn" onclick="sendTestData('empty')" style="background: #3b82f6;">Empty (0 people)</button>
                     <button class="test-btn" onclick="sendTestData('busy')" style="background: #f59e0b;">Busy (7 people)</button>
+                </div>
+                <div style="margin-top: 15px; padding: 15px; background: #f9fafb; border-radius: 8px;">
+                    <h3 style="margin-top: 0; font-size: 1em;">Customize Data for Testing:</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">People Count:</label>
+                            <input type="number" id="customPeople" value="5" min="0" max="10" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Temperature (°C):</label>
+                            <input type="number" id="customTemp" value="28" min="0" max="40" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Humidity (%):</label>
+                            <input type="number" id="customHumidity" value="60" min="0" max="100" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">UV Index:</label>
+                            <input type="number" id="customUV" value="6" min="0" max="11" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Comfort Score:</label>
+                            <input type="number" id="customComfort" value="3.5" min="0" max="5" step="0.1" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Rating:</label>
+                            <input type="number" id="customRating" value="4.2" min="0" max="5" step="0.1" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Hourly Peak:</label>
+                            <input type="number" id="customHourlyPeak" value="0.65" min="0" max="1" step="0.05" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Weekly Peak:</label>
+                            <input type="number" id="customWeeklyPeak" value="0.75" min="0" max="1" step="0.05" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Air Quality:</label>
+                            <select id="customAirQuality" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="good" selected>Good</option>
+                                <option value="excellent">Excellent</option>
+                                <option value="moderate">Moderate</option>
+                                <option value="fair">Fair</option>
+                                <option value="poor">Poor</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Surface:</label>
+                            <input type="text" id="customSurface" value="Concrete" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Lighting Hours:</label>
+                            <input type="text" id="customLighting" value="6AM-10PM" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Size:</label>
+                            <input type="text" id="customSize" value="Full court" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Capacity:</label>
+                            <input type="number" id="customCapacity" value="10" min="1" max="20" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Last Cleaned:</label>
+                            <input type="text" id="customLastCleaned" value="Today" placeholder="Today, Yesterday, or date" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div style="grid-column: 1 / -1;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Facilities (comma-separated):</label>
+                            <input type="text" id="customFacilities" value="Water, Seating, Restroom, Parking" placeholder="Water, Seating, Restroom, Parking" style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; padding: 15px; background: #f0f0f0; border-radius: 8px;">
+                        <h4 style="margin-top: 0; font-size: 0.9em; color: #333; margin-bottom: 10px;">Hourly Crowd Levels (0.0-1.0, leave empty to use auto-generated):</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px;">
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">8AM:</label>
+                                <input type="number" id="hour8" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">9AM:</label>
+                                <input type="number" id="hour9" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">10AM:</label>
+                                <input type="number" id="hour10" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">11AM:</label>
+                                <input type="number" id="hour11" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">12PM:</label>
+                                <input type="number" id="hour12" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">1PM:</label>
+                                <input type="number" id="hour13" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">2PM:</label>
+                                <input type="number" id="hour14" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">3PM:</label>
+                                <input type="number" id="hour15" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">4PM:</label>
+                                <input type="number" id="hour16" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">5PM:</label>
+                                <input type="number" id="hour17" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">6PM:</label>
+                                <input type="number" id="hour18" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">7PM:</label>
+                                <input type="number" id="hour19" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">8PM:</label>
+                                <input type="number" id="hour20" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">9PM:</label>
+                                <input type="number" id="hour21" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7em; color: #666; margin-bottom: 2px;">10PM:</label>
+                                <input type="number" id="hour22" min="0" max="1" step="0.1" placeholder="auto" style="width: 100%; padding: 3px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8em;">
+                            </div>
+                        </div>
+                        <p style="font-size: 0.75em; color: #666; margin-top: 8px; margin-bottom: 0;">Values are occupancy (0.0 = empty, 1.0 = full). Empty fields use auto-generated values.</p>
+                    </div>
+                    <button class="test-btn" onclick="sendCustomTestData()" style="background: #8b5cf6; width: 100%; margin-top: 15px;">Send Custom Data</button>
                 </div>
                 <div id="module5Status" style="margin-top: 10px; color: #666; font-size: 0.9em;"></div>
             </div>
@@ -508,6 +646,95 @@
                     statusDiv.textContent = '✗ Failed to send test data';
                     statusDiv.style.color = '#ef4444';
                     addLog('Failed to send Module 5 test data', 'error');
+                }
+            });
+        }
+        
+        // Module 5 custom test data function
+        function sendCustomTestData() {
+            const statusDiv = document.getElementById('module5Status');
+            statusDiv.textContent = 'Sending custom data...';
+            
+            // Get custom values from inputs
+            const customData = {
+                'people': parseInt(document.getElementById('customPeople').value) || 5,
+                'temp': parseInt(document.getElementById('customTemp').value) || 28,
+                'humidity': parseInt(document.getElementById('customHumidity').value) || 60,
+                'uv': parseInt(document.getElementById('customUV').value) || 6,
+                'comfort': parseFloat(document.getElementById('customComfort').value) || 3.5,
+                'rating': parseFloat(document.getElementById('customRating').value) || 4.2,
+                'hourly_peak': parseFloat(document.getElementById('customHourlyPeak').value) || 0.65,
+                'weekly_peak': parseFloat(document.getElementById('customWeeklyPeak').value) || 0.75,
+                'air_quality': document.getElementById('customAirQuality').value || 'good',
+                'surface': document.getElementById('customSurface').value || 'Concrete',
+                'lighting_hours': document.getElementById('customLighting').value || '6AM-10PM',
+                'size': document.getElementById('customSize').value || 'Full court',
+                'capacity': parseInt(document.getElementById('customCapacity').value) || 10,
+                'last_cleaned': document.getElementById('customLastCleaned').value || 'Today',
+                'facilities': document.getElementById('customFacilities').value.split(',').map(f => f.trim()).filter(f => f.length > 0) || ['Water', 'Seating', 'Restroom', 'Parking']
+            };
+            
+            // Collect custom hourly values (if provided)
+            // Use integer keys (not strings) so Python can match them correctly
+            const customHourly = {};
+            const hourInputs = [
+                {id: 'hour8', hour: 8},
+                {id: 'hour9', hour: 9},
+                {id: 'hour10', hour: 10},
+                {id: 'hour11', hour: 11},
+                {id: 'hour12', hour: 12},
+                {id: 'hour13', hour: 13},
+                {id: 'hour14', hour: 14},
+                {id: 'hour15', hour: 15},
+                {id: 'hour16', hour: 16},
+                {id: 'hour17', hour: 17},
+                {id: 'hour18', hour: 18},
+                {id: 'hour19', hour: 19},
+                {id: 'hour20', hour: 20},
+                {id: 'hour21', hour: 21},
+                {id: 'hour22', hour: 22}
+            ];
+            
+            hourInputs.forEach(({id, hour}) => {
+                const input = document.getElementById(id);
+                const value = input.value.trim();
+                if (value !== '' && !isNaN(parseFloat(value))) {
+                    const occupancy = parseFloat(value);
+                    if (occupancy >= 0 && occupancy <= 1) {
+                        // Use integer key (JavaScript will convert to string in JSON, but Python will handle it)
+                        customHourly[hour] = occupancy;
+                    }
+                }
+            });
+            
+            // Add custom hourly data if any values were provided
+            if (Object.keys(customHourly).length > 0) {
+                customData['custom_hourly'] = customHourly;
+            }
+            
+            // Determine crowd level based on people count
+            let level = 'normal';
+            if (customData.people === 0) level = 'empty';
+            else if (customData.people >= 9) level = 'full';
+            else if (customData.people >= 7) level = 'busy';
+            else if (customData.people <= 2) level = 'light';
+            
+            customData['level'] = level;
+            customData['wait'] = level === 'full' ? 30 : (level === 'busy' ? 20 : (level === 'normal' ? 10 : 0));
+            
+            socket.emit('send_test_data_module5', {
+                court_id: 'basketball_a',
+                scenario: 'custom',
+                custom_data: customData
+            }, function(response) {
+                if (response && response.status === 'success') {
+                    statusDiv.textContent = `✓ Custom data sent (${customData.people} people, ${level})`;
+                    statusDiv.style.color = '#10b981';
+                    addLog(`Module 5 custom data sent: ${customData.people} people, ${level}, T:${customData.temp}°C, R:${customData.rating}`, 'success');
+                } else {
+                    statusDiv.textContent = '✗ Failed to send custom data';
+                    statusDiv.style.color = '#ef4444';
+                    addLog('Failed to send Module 5 custom data', 'error');
                 }
             });
         }
