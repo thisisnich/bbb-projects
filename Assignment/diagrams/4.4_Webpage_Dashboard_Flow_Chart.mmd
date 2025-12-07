@@ -1,0 +1,33 @@
+flowchart TD
+    START([Page Load]) --> INIT_HTML[Initialize HTML<br/>Load CSS Styles]
+    INIT_HTML --> INIT_JS[Initialize JavaScript<br/>Get DOM Elements]
+    INIT_JS --> CONNECT_SOCKET[Connect Socket.IO<br/>to Server]
+    CONNECT_SOCKET --> SETUP_HANDLERS[Setup Event Handlers<br/>connect, disconnect<br/>CrowdDataUpdate<br/>VideoFrameUpdate<br/>ButtonPressDebug]
+    SETUP_HANDLERS --> WAIT_EVENTS[Wait for Events]
+    
+    WAIT_EVENTS --> CHECK_EVENT{Event<br/>Received?}
+    CHECK_EVENT -->|connect| UPDATE_STATUS[Update Status<br/>Connected Indicator]
+    CHECK_EVENT -->|disconnect| UPDATE_STATUS_DISCONN[Update Status<br/>Disconnected Indicator]
+    CHECK_EVENT -->|CrowdDataUpdate| UPDATE_CROWD[Update Crowd Data<br/>People Count<br/>Crowd Level<br/>Confidence<br/>Sensor Status]
+    CHECK_EVENT -->|VideoFrameUpdate| UPDATE_VIDEO[Update Video Display<br/>Decode Base64<br/>Show Image]
+    CHECK_EVENT -->|ButtonPressDebug| UPDATE_LOG[Update Activity Log<br/>Button Press Info]
+    CHECK_EVENT -->|User Action| CHECK_ACTION{Action<br/>Type?}
+    
+    UPDATE_STATUS --> WAIT_EVENTS
+    UPDATE_STATUS_DISCONN --> WAIT_EVENTS
+    UPDATE_CROWD --> UPDATE_UI[Update UI Elements<br/>DOM Manipulation]
+    UPDATE_VIDEO --> UPDATE_UI
+    UPDATE_LOG --> UPDATE_UI
+    UPDATE_UI --> WAIT_EVENTS
+    
+    CHECK_ACTION -->|Send Test Data| GET_INPUTS[Get Input Values<br/>People, Temp, etc.]
+    CHECK_ACTION -->|Custom Data| GET_CUSTOM[Get Custom Values<br/>All Fields]
+    GET_INPUTS --> PREPARE_DATA[Prepare Test Data<br/>JSON Object]
+    GET_CUSTOM --> PREPARE_DATA
+    PREPARE_DATA --> SEND_EVENT[Send Socket.IO Event<br/>send_test_data_module5]
+    SEND_EVENT --> WAIT_RESPONSE{Response<br/>Received?}
+    WAIT_RESPONSE -->|Success| UPDATE_STATUS_SUCCESS[Update Status<br/>Success Message]
+    WAIT_RESPONSE -->|Error| UPDATE_STATUS_ERROR[Update Status<br/>Error Message]
+    UPDATE_STATUS_SUCCESS --> WAIT_EVENTS
+    UPDATE_STATUS_ERROR --> WAIT_EVENTS
+

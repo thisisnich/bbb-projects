@@ -1,0 +1,31 @@
+graph TB
+    subgraph "User Interface"
+        BROWSER[Web Browser<br/>HTML/CSS/JS]
+        UI_CARDS[UI Cards<br/>People Count<br/>Confidence<br/>Sensor Status]
+        VIDEO_DISPLAY[Video Display<br/>Live Feed]
+        CONTROL_PANEL[Control Panel<br/>Module 5 Test Data]
+        LOG_DISPLAY[Activity Log<br/>Event History]
+    end
+    
+    subgraph "JavaScript Client"
+        SOCKET_CLIENT_JS[Socket.IO Client<br/>Browser Client]
+        EVENT_HANDLERS[Event Handlers<br/>connect, disconnect<br/>CrowdDataUpdate<br/>VideoFrameUpdate<br/>ButtonPressDebug]
+        UI_UPDATER[UI Updater<br/>DOM Manipulation<br/>Real-time Updates]
+    end
+    
+    subgraph "Socket.IO Communication"
+        WIFI_JS[WiFi Connection<br/>Socket.IO Protocol]
+    end
+    
+    BROWSER --> UI_CARDS
+    BROWSER --> VIDEO_DISPLAY
+    BROWSER --> CONTROL_PANEL
+    BROWSER --> LOG_DISPLAY
+    SOCKET_CLIENT_JS --> EVENT_HANDLERS
+    EVENT_HANDLERS --> UI_UPDATER
+    UI_UPDATER --> UI_CARDS
+    UI_UPDATER --> VIDEO_DISPLAY
+    UI_UPDATER --> LOG_DISPLAY
+    SOCKET_CLIENT_JS <-->|Socket.IO<br/>Bidirectional| WIFI_JS
+    CONTROL_PANEL -->|send_test_data_module5| SOCKET_CLIENT_JS
+

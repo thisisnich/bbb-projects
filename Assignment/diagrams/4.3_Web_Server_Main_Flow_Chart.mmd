@@ -1,0 +1,34 @@
+flowchart TD
+    START([Start Flask Server]) --> INIT_FLASK[Initialize Flask App<br/>Initialize Socket.IO]
+    INIT_FLASK --> SETUP_ROUTES[Setup Routes<br/>/ and /api/current_data]
+    SETUP_ROUTES --> SETUP_EVENTS[Setup Socket.IO Events<br/>connect, disconnect<br/>module_register<br/>CrowdVideoFrameEvent<br/>send_test_data_module5]
+    SETUP_EVENTS --> START_SERVER[Start Server<br/>Port 5000]
+    START_SERVER --> WAIT_CONNECTION[Wait for Connections]
+    
+    WAIT_CONNECTION --> CLIENT_CONN{Client<br/>Connected?}
+    CLIENT_CONN -->|Yes| REGISTER_MODULE[Register Module<br/>Store in connected_modules]
+    CLIENT_CONN -->|No| WAIT_CONNECTION
+    REGISTER_MODULE --> SEND_ACK[Send Registration<br/>Acknowledgment]
+    SEND_ACK --> WAIT_EVENT[Wait for Events]
+    
+    WAIT_EVENT --> CHECK_EVENT{Event<br/>Type?}
+    CHECK_EVENT -->|CrowdVideoFrameEvent| PROCESS_VIDEO[Process Video Frame<br/>Extract Base64 Image]
+    CHECK_EVENT -->|send_test_data_module5| GENERATE_TEST[Generate Test Data<br/>Based on Scenario]
+    CHECK_EVENT -->|module_register| REGISTER_MODULE
+    CHECK_EVENT -->|Other| WAIT_EVENT
+    
+    PROCESS_VIDEO --> DECODE_IMAGE[Decode Base64<br/>to Image Bytes]
+    DECODE_IMAGE --> AI_PROCESS{Google AI<br/>API Key Set?}
+    AI_PROCESS -->|Yes| COUNT_PEOPLE[Count People<br/>Google AI API]
+    AI_PROCESS -->|No| COUNT_PEOPLE_FALLBACK[Count People<br/>Fallback: 0]
+    COUNT_PEOPLE --> CALC_CONFIDENCE[Calculate Confidence<br/>Multi-sensor Fusion]
+    COUNT_PEOPLE_FALLBACK --> CALC_CONFIDENCE
+    CALC_CONFIDENCE --> DETERMINE_LEVEL[Determine Crowd Level<br/>empty/light/normal/busy/full]
+    DETERMINE_LEVEL --> GENERATE_DATA[Generate Module 5<br/>Display Data]
+    
+    GENERATE_TEST --> GENERATE_DATA
+    GENERATE_DATA --> SEND_MODULE5[Send DisplayUpdate<br/>to Module 5]
+    SEND_MODULE5 --> SEND_DASHBOARD[Send CrowdDataUpdate<br/>to Dashboard]
+    SEND_DASHBOARD --> BROADCAST_VIDEO[Broadcast VideoFrameUpdate<br/>to Dashboard]
+    BROADCAST_VIDEO --> WAIT_EVENT
+

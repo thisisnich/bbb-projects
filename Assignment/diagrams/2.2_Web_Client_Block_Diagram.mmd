@@ -1,0 +1,31 @@
+    graph LR
+        subgraph "Input Devices"
+            KEYPAD_IN[Analog Key Click<br/>P9_39 ADC<br/>6 Buttons]
+            POT_IN[Potentiometer<br/>P9_37 ADC<br/>0.0-0.545V]
+        end
+        
+        subgraph "BeagleBone Black Processing"
+            ADC_MOD[ADC Module<br/>Read Analog Values]
+            BUTTON_HANDLER[Button Handler<br/>Edge Detection<br/>Debounce 50ms]
+            SCROLL_HANDLER[Scroll Handler<br/>Potentiometer Mapping]
+            VIEW_MANAGER[View Manager<br/>6 Views<br/>Auto-rotation]
+            DISPLAY_ENGINE[Display Engine<br/>OLED & LED Matrix]
+            SOCKET_CLIENT[Socket.IO Client<br/>Receive DisplayUpdate]
+        end
+        
+        subgraph "Output Devices"
+            OLED_OUT[OLED Display<br/>I2C 0x3C<br/>64x32 pixels]
+            LEDMAT_OUT[8x8 LED Matrix<br/>SPI0<br/>64 pixels]
+        end
+        
+        KEYPAD_IN -->|ADC Read| ADC_MOD
+        POT_IN -->|ADC Read| ADC_MOD
+        ADC_MOD --> BUTTON_HANDLER
+        ADC_MOD --> SCROLL_HANDLER
+        BUTTON_HANDLER --> VIEW_MANAGER
+        SCROLL_HANDLER --> VIEW_MANAGER
+        SOCKET_CLIENT -->|Display Data| VIEW_MANAGER
+        VIEW_MANAGER --> DISPLAY_ENGINE
+        DISPLAY_ENGINE -->|I2C Write| OLED_OUT
+        DISPLAY_ENGINE -->|SPI Write| LEDMAT_OUT
+

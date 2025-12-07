@@ -1,0 +1,30 @@
+flowchart TD
+    START([Start Program]) --> INIT_HW[Initialize Hardware<br/>OLED, LED Matrix, Buttons, Pot]
+    INIT_HW --> CHECK_HW{Hardware<br/>Available?}
+    CHECK_HW -->|Yes| CONNECT[Connect to Server<br/>Socket.IO]
+    CHECK_HW -->|No| WARN[Warning: Hardware<br/>Not Available]
+    WARN --> CONNECT
+    CONNECT --> SHOW_CONN[Show 'Connecting'<br/>on OLED]
+    SHOW_CONN --> WAIT_CONN{Connection<br/>Successful?}
+    WAIT_CONN -->|No| SHOW_ERROR[Show Error<br/>on OLED]
+    SHOW_ERROR --> END([End])
+    WAIT_CONN -->|Yes| REGISTER[Register Module<br/>module_register Event]
+    REGISTER --> SHOW_CONNECTED[Show 'Connected'<br/>on OLED]
+    SHOW_CONNECTED --> START_THREADS[Start Threads<br/>Button Loop<br/>Scroll Loop<br/>Auto-rotation Loop]
+    START_THREADS --> MAIN_LOOP[Main Loop<br/>Wait for Events]
+    
+    MAIN_LOOP --> RECEIVE_DATA{DisplayUpdate<br/>Received?}
+    RECEIVE_DATA -->|Yes| UPDATE_DISPLAY[Update OLED Display<br/>Update LED Matrix]
+    RECEIVE_DATA -->|No| CHECK_BUTTON{Button<br/>Pressed?}
+    UPDATE_DISPLAY --> CHECK_BUTTON
+    CHECK_BUTTON -->|Yes| HANDLE_BUTTON[Handle Button Press<br/>Change View]
+    CHECK_BUTTON -->|No| CHECK_POT{Potentiometer<br/>Changed?}
+    HANDLE_BUTTON --> UPDATE_VIEW[Update Display<br/>with New View]
+    CHECK_POT -->|Yes| UPDATE_SCROLL[Update Scroll Position<br/>Redraw Display]
+    CHECK_POT -->|No| CHECK_AUTO{Auto-rotation<br/>Time?}
+    UPDATE_SCROLL --> CHECK_AUTO
+    CHECK_AUTO -->|Yes| ROTATE_VIEW[Rotate to Next View<br/>Update Display]
+    CHECK_AUTO -->|No| MAIN_LOOP
+    UPDATE_VIEW --> MAIN_LOOP
+    ROTATE_VIEW --> MAIN_LOOP
+

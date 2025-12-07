@@ -1,0 +1,45 @@
+graph TB
+    subgraph "Input Sources"
+        MOD1[Module 1<br/>Crowd Detection<br/>Video Frames]
+        MOD2[Module 2<br/>Environment<br/>Sensor Data]
+        MOD3[Module 3<br/>Feedback<br/>User Ratings]
+        WEBPAGE[Webpage<br/>Test Data Requests]
+    end
+    
+    subgraph "Flask Server"
+        FLASK[Flask Application<br/>HTTP Server]
+        ROUTES[Routes<br/>/ and /api/current_data]
+    end
+    
+    subgraph "Socket.IO Server"
+        SOCKETIO[Socket.IO Server<br/>Eventlet Async]
+        EVENTS[Event Handlers<br/>connect, disconnect<br/>module_register<br/>CrowdVideoFrameEvent<br/>send_test_data_module5]
+    end
+    
+    subgraph "Data Processing"
+        AI_PROC[Google AI API<br/>People Counting]
+        CONFIDENCE[Confidence Calculator<br/>Multi-sensor Fusion]
+        CROWD_LEVEL[Crowd Level<br/>Determination]
+        DATA_GEN[Module 5 Data<br/>Generator]
+    end
+    
+    subgraph "Output Destinations"
+        MOD5_OUT[Module 5<br/>DisplayUpdate Event]
+        DASHBOARD_OUT[Dashboard<br/>CrowdDataUpdate<br/>VideoFrameUpdate]
+    end
+    
+    MOD1 -->|Socket.IO| SOCKETIO
+    MOD2 -->|Socket.IO| SOCKETIO
+    MOD3 -->|Socket.IO| SOCKETIO
+    WEBPAGE -->|Socket.IO| SOCKETIO
+    SOCKETIO --> EVENTS
+    EVENTS --> AI_PROC
+    EVENTS --> DATA_GEN
+    AI_PROC --> CONFIDENCE
+    CONFIDENCE --> CROWD_LEVEL
+    CROWD_LEVEL --> DATA_GEN
+    DATA_GEN --> MOD5_OUT
+    DATA_GEN --> DASHBOARD_OUT
+    FLASK --> ROUTES
+    ROUTES --> SOCKETIO
+

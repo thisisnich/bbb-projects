@@ -1,0 +1,33 @@
+flowchart TD
+    START([DisplayUpdate Received]) --> LOCK[Acquire OLED<br/>Update Lock]
+    LOCK --> CHECK_DEBOUNCE{Time Since<br/>Last Update<br/>> 100ms?}
+    CHECK_DEBOUNCE -->|No| SKIP[Skip Update<br/>Debounced]
+    CHECK_DEBOUNCE -->|Yes| CHECK_VIEW{Current<br/>View?}
+    SKIP --> END([End])
+    
+    CHECK_VIEW -->|status| SHOW_STATUS[Show Current Status<br/>People, Level, Wait, Temp]
+    CHECK_VIEW -->|history_today| SHOW_TODAY[Show Today Pattern<br/>Hourly Occupancy]
+    CHECK_VIEW -->|history_week| SHOW_WEEK[Show Weekly Comparison<br/>Same Time Pattern]
+    CHECK_VIEW -->|weather| SHOW_WEATHER[Show Weather Details<br/>Temp, UV, Comfort]
+    CHECK_VIEW -->|alternatives| SHOW_ALT[Show Alternatives<br/>Nearby Courts]
+    CHECK_VIEW -->|info| SHOW_INFO[Show Court Info<br/>Facilities, Rating]
+    
+    SHOW_STATUS --> CALC_SCROLL[Calculate Scroll Offset<br/>from Potentiometer]
+    SHOW_TODAY --> CALC_SCROLL
+    SHOW_WEEK --> CALC_SCROLL
+    SHOW_WEATHER --> DRAW_OLED[Draw on OLED<br/>Clear Screen<br/>Draw Text]
+    SHOW_ALT --> CALC_SCROLL
+    SHOW_INFO --> CALC_SCROLL
+    
+    CALC_SCROLL --> READ_POT[Read Potentiometer<br/>P9_37]
+    READ_POT --> MAP_SCROLL[Map to Scroll Offset<br/>0.0-1.0 to Item Index]
+    MAP_SCROLL --> DRAW_OLED
+    
+    DRAW_OLED --> BATCH_DRAW[Batch All Draw Operations<br/>Rectangle, Text, Lines]
+    BATCH_DRAW --> DELAY[Small Delay 10ms<br/>Ensure Display Ready]
+    DELAY --> SHOW_DISPLAY[Call show<br/>Update OLED]
+    SHOW_DISPLAY --> DELAY2[Small Delay 10ms<br/>Ensure Update Completes]
+    DELAY2 --> UPDATE_MATRIX[Update LED Matrix<br/>Based on View]
+    UPDATE_MATRIX --> UNLOCK[Release OLED<br/>Update Lock]
+    UNLOCK --> END
+

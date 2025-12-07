@@ -1,0 +1,49 @@
+graph TB
+    subgraph "Web Client - Module 5 (BeagleBone Black)"
+        OLED[OLED Click<br/>Slot 1 I2C<br/>Display Output]
+        LEDMAT[8x8 LED Matrix<br/>Slot 3 SPI<br/>Infographics]
+        KEYPAD[Analog Key Click<br/>Slot 4 ADC<br/>6 Buttons Input]
+        POT[Potentiometer<br/>Slot 2 ADC<br/>Scroll Control]
+        BBB[BeagleBone Black<br/>Processor]
+        CLIENT[Python Client<br/>Socket.IO Client]
+    end
+    
+    subgraph "Network Communication"
+        WIFI[WiFi Connection<br/>Socket.IO Protocol]
+    end
+    
+    subgraph "Web Server (Cloud Server)"
+        SERVER[Flask Server<br/>Python Backend]
+        SOCKETIO[Socket.IO Server<br/>Event Handler]
+        PROCESS[Data Processing<br/>Google AI API]
+        STORAGE[Data Storage<br/>History & Patterns]
+    end
+    
+    subgraph "Webpage (Dashboard)"
+        HTML[HTML Interface<br/>Dashboard UI]
+        JS[JavaScript Client<br/>Socket.IO Client]
+        DISPLAY[Web Browser<br/>User Interface]
+    end
+    
+    OLED --> BBB
+    LEDMAT --> BBB
+    KEYPAD --> BBB
+    POT --> BBB
+    BBB --> CLIENT
+    CLIENT <-->|Socket.IO<br/>DisplayUpdate| WIFI
+    CLIENT <-->|Socket.IO<br/>module_register| WIFI
+    CLIENT <-->|Socket.IO<br/>button_press_debug| WIFI
+    
+    WIFI <-->|Socket.IO<br/>Bidirectional| SERVER
+    SERVER --> SOCKETIO
+    SOCKETIO --> PROCESS
+    SOCKETIO --> STORAGE
+    SOCKETIO <-->|Socket.IO<br/>Events| WIFI
+    
+    WIFI <-->|Socket.IO<br/>Bidirectional| JS
+    JS --> HTML
+    HTML --> DISPLAY
+    JS <-->|Socket.IO<br/>CrowdDataUpdate| WIFI
+    JS <-->|Socket.IO<br/>VideoFrameUpdate| WIFI
+    JS <-->|Socket.IO<br/>send_test_data_module5| WIFI
+

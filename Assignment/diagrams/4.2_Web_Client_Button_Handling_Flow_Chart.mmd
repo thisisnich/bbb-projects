@@ -1,0 +1,28 @@
+flowchart TD
+    START([Button Loop Thread]) --> READ_ADC[Read ADC Value<br/>P9_39]
+    READ_ADC --> CHECK_THRESHOLD{Check Voltage<br/>Thresholds}
+    CHECK_THRESHOLD -->|0.90-1.10V| BTN1[Button T1<br/>Status View]
+    CHECK_THRESHOLD -->|0.84-0.86V| BTN2[Button T2<br/>Toggle History]
+    CHECK_THRESHOLD -->|0.67-0.69V| BTN3[Button T3<br/>Weather View]
+    CHECK_THRESHOLD -->|0.50-0.52V| BTN4[Button T4<br/>Alternatives View]
+    CHECK_THRESHOLD -->|0.33-0.35V| BTN5[Button T5<br/>Info View]
+    CHECK_THRESHOLD -->|0.16-0.18V| BTN6[Button T6<br/>Cycle Views]
+    CHECK_THRESHOLD -->|0.00-0.10V| NO_BUTTON[No Button<br/>Pressed]
+    
+    BTN1 --> EDGE_DETECT{Edge<br/>Detection?}
+    BTN2 --> EDGE_DETECT
+    BTN3 --> EDGE_DETECT
+    BTN4 --> EDGE_DETECT
+    BTN5 --> EDGE_DETECT
+    BTN6 --> EDGE_DETECT
+    NO_BUTTON --> WAIT[Wait 50ms]
+    
+    EDGE_DETECT -->|Press Detected| BUZZ[Buzz Feedback<br/>1 Beep]
+    EDGE_DETECT -->|Held| WAIT
+    BUZZ --> CHANGE_VIEW[Change View<br/>Based on Button]
+    CHANGE_VIEW --> RESET_TIMER[Reset Auto-rotation<br/>Timer]
+    RESET_TIMER --> UPDATE_DISPLAY[Update OLED Display<br/>Update LED Matrix]
+    UPDATE_DISPLAY --> SEND_DEBUG[Send Debug Info<br/>to Server]
+    SEND_DEBUG --> WAIT
+    WAIT --> START
+
