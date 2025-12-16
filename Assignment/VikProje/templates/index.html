@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Module Dashboard - BBBW Development Server</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .status-bar {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .status-item {
+            text-align: center;
+        }
+        
+        .status-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .status-item .value {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .status-connected {
+            color: #00c853;
+        }
+        
+        .status-disconnected {
+            color: #d50000;
+        }
+        
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .module-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: transform 0.2s;
+        }
+        
+        .module-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .module-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .module-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .status-online {
+            background: #e8f5e9;
+            color: #00c853;
+        }
+        
+        .status-offline {
+            background: #ffebee;
+            color: #d50000;
+        }
+        
+        .data-section {
+            margin-bottom: 15px;
+        }
+        
+        .data-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .data-value {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .crowd-level {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        
+        .level-empty { background: #e3f2fd; color: #1976d2; }
+        .level-light { background: #e8f5e9; color: #388e3c; }
+        .level-normal { background: #fff3e0; color: #f57c00; }
+        .level-busy { background: #ffe0b2; color: #e65100; }
+        .level-full { background: #ffebee; color: #c62828; }
+        
+        .feedback-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        
+        .feedback-item {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feedback-rating {
+            font-size: 1.5em;
+            color: #ffb300;
+        }
+        
+        .timestamp {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .warnings-list {
+            margin-top: 10px;
+        }
+        
+        .warning-item {
+            background: #fff3cd;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 5px 0;
+            border-left: 3px solid #ffc107;
+        }
+        
+        .no-data {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .activity-log {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .log-entry {
+            padding: 10px;
+            border-left: 3px solid #667eea;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+            font-size: 0.9em;
+        }
+        
+        .log-time {
+            color: #999;
+            font-size: 0.85em;
+        }
+        
+        .test-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .test-btn:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 BBBW Multi-Module Development Dashboard</h1>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="label">Crowd Modules</div>
+                <div class="value" id="crowd-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Environment Modules</div>
+                <div class="value" id="env-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Feedback Modules</div>
+                <div class="value" id="feedback-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Server Status</div>
+                <div class="value status-connected" id="server-status">● Online</div>
+            </div>
+        </div>
+        
+        <div class="modules-grid">
+            <!-- CROWD MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">👥 Crowd Detection</div>
+                    <div class="module-status status-offline" id="crowd-module-status">Offline</div>
+                </div>
+                <div id="crowd-data">
+                    <div class="no-data">Waiting for crowd detection data...</div>
+                </div>
+            </div>
+            
+            <!-- ENVIRONMENT MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">🌡️ Environment Sensors</div>
+                    <div class="module-status status-offline" id="env-module-status">Offline</div>
+                </div>
+                <div id="environment-data">
+                    <div class="no-data">Waiting for environment data...</div>
+                </div>
+            </div>
+            
+            <!-- FEEDBACK MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">💬 User Feedback</div>
+                    <div class="module-status status-offline" id="feedback-module-status">Offline</div>
+                </div>
+                <div id="feedback-data">
+                    <div class="no-data">Waiting for feedback data...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- MODULE 5 TEST DATA CONTROL -->
+        <div class="module-card" style="margin-bottom: 20px;">
+            <div class="module-header">
+                <div class="module-title">🎮 Module 5 Display Control</div>
+                <div class="module-status status-online" id="module5-status">Ready</div>
+            </div>
+            <p style="color: #666; margin-bottom: 15px;">Send test data to Module 5 displays for testing and debugging</p>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                <button class="test-btn" onclick="sendTestData('normal')" style="background: #10b981;">Normal (5 people)</button>
+                <button class="test-btn" onclick="sendTestData('full')" style="background: #ef4444;">Full (9 people)</button>
+                <button class="test-btn" onclick="sendTestData('empty')" style="background: #3b82f6;">Empty (0 people)</button>
+                <button class="test-btn" onclick="sendTestData('busy')" style="background: #f59e0b;">Busy (7 people)</button>
+            </div>
+            <div id="test-data-status" style="padding: 10px; border-radius: 6px; display: none; margin-top: 10px;"></div>
+        </div>
+        
+        <!-- ACTIVITY LOG -->
+        <div class="activity-log">
+            <div class="log-title">📋 Activity Log</div>
+            <div id="activity-log-content"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Connect to server
+        var socket = io.connect('http://192.168.72.161:5000');
+        
+        // Track connected modules
+        var connectedModules = {
+            crowd_detection: [],
+            environment: [],
+            feedback: []
+        };
+        
+        // Activity log
+        function addLogEntry(message, type = 'info') {
+            var logContent = $('#activity-log-content');
+            var time = new Date().toLocaleTimeString();
+            var entry = $('<div class="log-entry"></div>');
+            entry.html('<span class="log-time">[' + time + ']</span> ' + message);
+            logContent.prepend(entry);
+            
+            // Keep only last 50 entries
+            if (logContent.children().length > 50) {
+                logContent.children().last().remove();
+            }
+        }
+        
+        // Update module counts
+        function updateModuleCounts() {
+            $('#crowd-count').text(connectedModules.crowd_detection.length);
+            $('#env-count').text(connectedModules.environment.length);
+            $('#feedback-count').text(connectedModules.feedback.length);
+        }
+        
+        // Update module status indicators
+        function updateModuleStatus(moduleType, isOnline) {
+            var statusId = moduleType + '-module-status';
+            var $status = $('#' + statusId);
+            if (isOnline) {
+                $status.removeClass('status-offline').addClass('status-online').text('Online');
+            } else {
+                $status.removeClass('status-online').addClass('status-offline').text('Offline');
+            }
+        }
+        
+        // --- CROWD DATA HANDLERS ---
+        socket.on('crowd_update', function(data) {
+            addLogEntry('Crowd data received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('crowd', true);
+            
+            var html = '';
+            if (data.data) {
+                html += '<div class="data-section">';
+                html += '<div class="data-label">People Count</div>';
+                html += '<div class="data-value">' + (data.data.people_count || 0) + '</div>';
+                html += '</div>';
+                
+                if (data.data.crowd_level) {
+                    var levelClass = 'level-' + data.data.crowd_level.toLowerCase();
+                    html += '<div class="crowd-level ' + levelClass + '">' + 
+                            data.data.crowd_level.toUpperCase() + '</div>';
+                }
+                
+                html += '<div class="data-grid">';
+                if (data.data.confidence !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Confidence</div>';
+                    html += '<div class="data-value">' + (data.data.confidence * 100).toFixed(1) + '%</div>';
+                    html += '</div>';
+                }
+                if (data.data.noise_db !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Noise Level</div>';
+                    html += '<div class="data-value">' + data.data.noise_db + ' dB</div>';
+                    html += '</div>';
+                }
+                if (data.data.motion_detected !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Motion</div>';
+                    html += '<div class="data-value">' + (data.data.motion_detected ? 'Yes' : 'No') + '</div>';
+                    html += '</div>';
+                }
+                if (data.data.proximity_triggered !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Proximity</div>';
+                    html += '<div class="data-value">' + (data.data.proximity_triggered ? 'Triggered' : 'None') + '</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                if (data.timestamp) {
+                    html += '<div class="timestamp">Last update: ' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+            }
+            $('#crowd-data').html(html);
+        });
+        
+        // --- ENVIRONMENT DATA HANDLERS ---
+        socket.on('environment_update', function(data) {
+            addLogEntry('Environment data received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('env', true);
+            
+            var html = '';
+            if (data.data) {
+                html += '<div class="data-grid">';
+                if (data.data.temperature_c !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Temperature</div>';
+                    html += '<div class="data-value">' + data.data.temperature_c + '°C</div>';
+                    html += '</div>';
+                }
+                if (data.data.humidity_percent !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Humidity</div>';
+                    html += '<div class="data-value">' + data.data.humidity_percent + '%</div>';
+                    html += '</div>';
+                }
+                if (data.data.uv_index !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">UV Index</div>';
+                    html += '<div class="data-value">' + data.data.uv_index + '</div>';
+                    html += '</div>';
+                }
+                if (data.data.comfort_score !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Comfort Score</div>';
+                    html += '<div class="data-value">' + data.data.comfort_score + '/5.0</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                if (data.data.voc_level) {
+                    html += '<div class="data-section" style="margin-top: 15px;">';
+                    html += '<div class="data-label">Air Quality (VOC)</div>';
+                    html += '<div class="data-value">' + data.data.voc_level.toUpperCase() + 
+                            (data.data.voc_reading ? ' (' + data.data.voc_reading + ')' : '') + '</div>';
+                    html += '</div>';
+                }
+                
+                if (data.data.warnings && data.data.warnings.length > 0) {
+                    html += '<div class="warnings-list">';
+                    html += '<div class="data-label" style="margin-top: 15px;">Warnings:</div>';
+                    data.data.warnings.forEach(function(warning) {
+                        html += '<div class="warning-item">' + warning + '</div>';
+                    });
+                    html += '</div>';
+                }
+                
+                if (data.timestamp) {
+                    html += '<div class="timestamp">Last update: ' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+            }
+            $('#environment-data').html(html);
+        });
+        
+        // --- FEEDBACK DATA HANDLERS ---
+        socket.on('feedback_update', function(data) {
+            addLogEntry('Feedback received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('feedback', true);
+            
+            var html = '<div class="feedback-list">';
+            if (data.data) {
+                var item = '<div class="feedback-item">';
+                if (data.data.report_type === 'rating') {
+                    item += '<div class="feedback-rating">';
+                    for (var i = 0; i < data.data.rating; i++) {
+                        item += '⭐';
+                    }
+                    item += '</div>';
+                    item += '<div><strong>' + (data.data.question_text || 'Rating') + '</strong></div>';
+                    item += '<div>Rating: ' + data.data.rating + '/' + (data.data.rating_scale || '5') + '</div>';
+                } else if (data.data.report_type === 'text') {
+                    item += '<div><strong>' + (data.data.question_text || 'Text Feedback') + '</strong></div>';
+                    item += '<div>' + (data.data.text_response || 'No text') + '</div>';
+                    if (data.data.issue_category) {
+                        item += '<div style="margin-top: 5px;"><span style="background: #ffebee; padding: 3px 8px; border-radius: 4px; font-size: 0.85em;">' + 
+                                data.data.issue_category + '</span></div>';
+                    }
+                }
+                if (data.timestamp) {
+                    item += '<div class="timestamp">' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+                item += '</div>';
+                html = item + html;
+            }
+            html += '</div>';
+            $('#feedback-data').html(html);
+        });
+        
+        // --- MODULE CONNECTION HANDLERS ---
+        socket.on('module_connected', function(data) {
+            if (data.module_type === 'crowd_detection' && connectedModules.crowd_detection.indexOf(data.module_id) === -1) {
+                connectedModules.crowd_detection.push(data.module_id);
+            } else if (data.module_type === 'environment' && connectedModules.environment.indexOf(data.module_id) === -1) {
+                connectedModules.environment.push(data.module_id);
+            } else if (data.module_type === 'feedback' && connectedModules.feedback.indexOf(data.module_id) === -1) {
+                connectedModules.feedback.push(data.module_id);
+            }
+            updateModuleCounts();
+            addLogEntry('Module connected: ' + data.module_id + ' (' + data.module_type + ')', 'success');
+        });
+        
+        // --- CONNECTION STATUS ---
+        socket.on('connect', function() {
+            addLogEntry('Connected to server', 'success');
+            $('#server-status').text('● Online').removeClass('status-disconnected').addClass('status-connected');
+        });
+        
+        socket.on('disconnect', function() {
+            addLogEntry('Disconnected from server', 'error');
+            $('#server-status').text('● Offline').removeClass('status-connected').addClass('status-disconnected');
+        });
+        
+        // --- INITIAL DATA SNAPSHOT (when connecting) ---
+        socket.on('current_data_snapshot', function(data) {
+            addLogEntry('Received initial data snapshot', 'info');
+            // Trigger updates for existing data
+            if (data.crowd) {
+                // Manually trigger crowd update display
+                var crowdData = data.crowd;
+                updateModuleStatus('crowd', true);
+                var html = '';
+                if (crowdData.data) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">People Count</div>';
+                    html += '<div class="data-value">' + (crowdData.data.people_count || 0) + '</div>';
+                    html += '</div>';
+                    if (crowdData.data.crowd_level) {
+                        var levelClass = 'level-' + crowdData.data.crowd_level.toLowerCase();
+                        html += '<div class="crowd-level ' + levelClass + '">' + 
+                                crowdData.data.crowd_level.toUpperCase() + '</div>';
+                    }
+                    html += '<div class="data-grid">';
+                    if (crowdData.data.confidence !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Confidence</div>';
+                        html += '<div class="data-value">' + (crowdData.data.confidence * 100).toFixed(1) + '%</div>';
+                        html += '</div>';
+                    }
+                    if (crowdData.data.noise_db !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Noise Level</div>';
+                        html += '<div class="data-value">' + crowdData.data.noise_db + ' dB</div>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    if (crowdData.timestamp) {
+                        html += '<div class="timestamp">Last update: ' + new Date(crowdData.timestamp).toLocaleString() + '</div>';
+                    }
+                }
+                $('#crowd-data').html(html);
+            }
+            if (data.environment) {
+                var envData = data.environment;
+                updateModuleStatus('env', true);
+                var html = '';
+                if (envData.data) {
+                    html += '<div class="data-grid">';
+                    if (envData.data.temperature_c !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Temperature</div>';
+                        html += '<div class="data-value">' + envData.data.temperature_c + '°C</div>';
+                        html += '</div>';
+                    }
+                    if (envData.data.humidity_percent !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Humidity</div>';
+                        html += '<div class="data-value">' + envData.data.humidity_percent + '%</div>';
+                        html += '</div>';
+                    }
+                    if (envData.data.uv_index !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">UV Index</div>';
+                        html += '<div class="data-value">' + envData.data.uv_index + '</div>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    if (envData.timestamp) {
+                        html += '<div class="timestamp">Last update: ' + new Date(envData.timestamp).toLocaleString() + '</div>';
+                    }
+                }
+                $('#environment-data').html(html);
+            }
+        });
+        
+        // --- MODULE 5 TEST DATA HANDLERS ---
+        function sendTestData(scenario) {
+            var courtId = 'basketball_a'; // Default court ID
+            var statusDiv = $('#test-data-status');
+            
+            statusDiv.show().html('Sending test data...').css({
+                'background': '#e3f2fd',
+                'color': '#1976d2'
+            });
+            
+            socket.emit('send_test_data_module5', {
+                'court_id': courtId,
+                'scenario': scenario
+            });
+            
+            addLogEntry('Sending test data to Module 5: ' + scenario + ' scenario', 'info');
+        }
+        
+        socket.on('test_data_sent', function(data) {
+            var statusDiv = $('#test-data-status');
+            statusDiv.show().html('✓ Test data sent successfully! Scenario: ' + data.scenario + 
+                                 ' (Court: ' + data.court_id + ')').css({
+                'background': '#e8f5e9',
+                'color': '#2e7d32'
+            });
+            
+            setTimeout(function() {
+                statusDiv.fadeOut();
+            }, 3000);
+            
+            addLogEntry('Test data sent to Module 5: ' + data.scenario, 'success');
+        });
+        
+        // Initial log entry
+        addLogEntry('Dashboard initialized. Waiting for module connections...', 'info');
+    </script>
+</body>
+</html>
