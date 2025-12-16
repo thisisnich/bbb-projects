@@ -1,0 +1,43 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point]
+    
+    %% Left: Server
+    SERVER[PC Web Server]
+    
+    %% Middle: Browser Components
+    BROWSER[Web Browser]
+    HTML[HTML Template<br/>HTML + CSS]
+    JS[JavaScript Client<br/>Socket.IO]
+    
+    %% Right: Display Components
+    UI_CARDS[UI Cards<br/>People Count<br/>Confidence<br/>Sensor Status]
+    VIDEO[Video Display<br/>Live Feed]
+    CONTROL[Control Panel<br/>Module 5 Test Data]
+    LOG[Activity Log<br/>Event History]
+    
+    %% Wireless connection
+    SERVER -.->|Wi-Fi| AP
+    BROWSER -.->|Wi-Fi| AP
+    
+    %% Browser internal structure
+    BROWSER --> HTML
+    BROWSER --> JS
+    
+    %% JavaScript to display components
+    JS -->|Updates| UI_CARDS
+    JS -->|Updates| VIDEO
+    JS -->|Updates| LOG
+    
+    %% Control panel sends data to server
+    CONTROL -->|User Input| JS
+    JS -->|send_test_data_module5| AP
+    
+    %% Styling - Simple black and white
+    classDef block fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    classDef accesspoint fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 3 3,color:#000
+    
+    class SERVER,BROWSER,HTML,JS,UI_CARDS,VIDEO,CONTROL,LOG block
+    class AP accesspoint
+

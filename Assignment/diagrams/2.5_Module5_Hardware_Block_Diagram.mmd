@@ -1,0 +1,73 @@
+graph TB
+    subgraph "Wireless Communication"
+        AP[Access Point<br/>Wi-Fi Hub]
+    end
+    
+    subgraph "Left Side - Server"
+        WIFI1[Wi-Fi]
+        SERVER[PC Web Server<br/>Flask + Socket.IO<br/>Cloud Server]
+    end
+    
+    subgraph "Right Side - Client"
+        WIFI2[Wi-Fi]
+        BBBW[BBBW Board<br/>BeagleBone Black<br/>Wireless]
+        CAPE[Mikroe Cape Board<br/>Interface Board]
+    end
+    
+    subgraph "Input Devices"
+        POT[POT Click Board<br/>Slot 2<br/>Potentiometer<br/>Scroll Control]
+        KEYPAD[Analog Key Click<br/>Slot 4<br/>6-Button Keypad<br/>Navigation]
+    end
+    
+    subgraph "Output Devices"
+        OLED[OLED Click<br/>Slot 1<br/>64x32 Display<br/>Main Display]
+        LEDMAT[8x8 LED Matrix<br/>Slot 3<br/>Infographics<br/>Visual Patterns]
+    end
+    
+    %% Wireless connections
+    WIFI1 -.->|Wi-Fi| AP
+    SERVER -.->|Wi-Fi| AP
+    WIFI2 -.->|Wi-Fi| AP
+    BBBW -.->|Wi-Fi| AP
+    
+    %% BBBW to Cape connections
+    BBBW -->|Power/GND| CAPE
+    BBBW -->|I2C Signal| CAPE
+    BBBW -->|SPI Signal| CAPE
+    BBBW -->|ADC Signal| CAPE
+    
+    %% Cape to Input Devices
+    CAPE -->|Power/GND| POT
+    CAPE -->|Analog Signal<br/>P9_37 AIN2| POT
+    CAPE -->|Power/GND| KEYPAD
+    CAPE -->|Analog Signal<br/>P9_39 AIN0| KEYPAD
+    
+    %% Cape to Output Devices
+    CAPE -->|Power/GND| OLED
+    CAPE -->|Digital Signal<br/>I2C: SCL/SDA<br/>Address: 0x3C| OLED
+    CAPE -->|Power/GND| LEDMAT
+    CAPE -->|Digital Signal<br/>SPI: CS/SCK/MISO/MOSI<br/>Bus 0, Device 0| LEDMAT
+    
+    %% Power/GND rail
+    POWER[Power/GND Rail]
+    POWER --> CAPE
+    POWER --> POT
+    POWER --> KEYPAD
+    POWER --> OLED
+    POWER --> LEDMAT
+    
+    %% Styling
+    classDef server fill:#ff9500,stroke:#333,stroke-width:2px,color:#000
+    classDef client fill:#ff9500,stroke:#333,stroke-width:2px,color:#000
+    classDef input fill:#ff9500,stroke:#333,stroke-width:2px,color:#000
+    classDef output fill:#ff9500,stroke:#333,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    classDef power fill:#333,stroke:#333,stroke-width:2px,color:#fff
+    
+    class SERVER server
+    class BBBW,CAPE client
+    class POT,KEYPAD input
+    class OLED,LEDMAT output
+    class AP,WIFI1,WIFI2 wireless
+    class POWER power
+

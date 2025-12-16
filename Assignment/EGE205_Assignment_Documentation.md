@@ -34,6 +34,8 @@ Based on the system design and implementation, the following criteria were estab
 3. **User Interface:** Multiple views accessible via button navigation with auto-rotation feature
 
 ### Functional Requirements
+
+#### Web Client (Module 5) Requirements
 1. **Display Capabilities:**
    - Current court status (people count, crowd level, wait time)
    - Historical patterns (hourly and weekly)
@@ -50,12 +52,60 @@ Based on the system design and implementation, the following criteria were estab
    - OLED display (64x32) for text and status information
    - 8x8 LED Matrix for graphical infographics
 
+#### Web Server Requirements
+1. **Data Processing:**
+   - Receive and process video frames from Module 1 (Crowd Detection)
+   - Process images with Google AI API to count people
+   - Receive sensor data from Module 2 (Environment) and Module 3 (Feedback)
+   - Calculate confidence scores using multi-sensor fusion
+   - Determine crowd levels (empty/light/normal/busy/full)
+
+2. **Data Generation:**
+   - Generate complete Module 5 display data structure including:
+     - Current status (occupancy, people count, crowd level, estimated wait time)
+     - Weather information (temperature, humidity, UV index, comfort score)
+     - Historical patterns (hourly and weekly occupancy data)
+     - Recommendations (best times, avoid times, nearby alternatives)
+     - Court information (facilities, ratings, maintenance status)
+
+3. **Real-time Communication:**
+   - Maintain Socket.IO connections with all modules (1, 2, 3, 5)
+   - Broadcast processed data to Module 5 (DisplayUpdate events)
+   - Broadcast crowd data and video frames to Dashboard (CrowdDataUpdate, VideoFrameUpdate events)
+   - Handle test data requests from Dashboard for Module 5 testing
+   - Register and track connected modules
+
+4. **API Endpoints:**
+   - Serve dashboard webpage at root route (/)
+   - Provide REST API endpoint for current data (/api/current_data)
+   - Handle Socket.IO events for bidirectional communication
+
+#### Webpage (Dashboard) Requirements
+1. **Real-time Monitoring:**
+   - Display current people count and crowd level
+   - Show confidence score and sensor status
+   - Display live video feed from Module 1
+   - Show activity log of all system events
+
+2. **Control Interface:**
+   - Send test data to Module 5 with preset scenarios (normal, full, empty, busy)
+   - Customize test data parameters (people count, temperature, weather, etc.)
+   - Monitor Module 5 button press events in real-time
+
+3. **Data Visualization:**
+   - Visual indicators for connection status
+   - Progress bars for confidence levels
+   - Color-coded crowd level badges
+   - Timestamp displays for last updates
+
 ## 1.2 Constraints
 
 ### Hardware Constraints
+
+#### Web Client (Module 5) Hardware Constraints
 1. **BeagleBone Black Pin Limitations:**
-   - Limited I2C buses (used for OLED)
-   - Limited SPI buses (used for LED Matrix)
+   - Limited I2C buses (used for OLED) - limits where to place OLED click
+   - Limited SPI buses (used for LED Matrix) - limits where to place 8x8 click
    - Limited ADC channels (used for buttons and potentiometer)
    - Pin conflicts must be avoided
 
@@ -73,19 +123,30 @@ Based on the system design and implementation, the following criteria were estab
    - OLED display size: 64x32 pixels (limited text display area)
    - 8x8 LED Matrix: 64 pixels total (limited graphical detail)
 
+#### Web Server Hardware Constraints
+1. **Platform Requirements:**
+   - Must run on a PC or laptop with network connectivity
+   - Requires Python 3.x runtime environment
+   - Must have sufficient processing power for Google AI API calls and real-time data processing
+
+2. **Network Requirements:**
+   - Must be accessible on the same network as all modules
+   - Requires stable network connection for Socket.IO server
+   - Port 5000 (or configured port) must be available and not blocked by firewall
+
 ### Software Constraints
 1. **Network Dependency:**
-   - Requires stable WiFi connection for Socket.IO communication
-   - Server must be accessible at configured IP address
-   - No offline functionality
+   - **Web Client (Module 5):** As a display device, it requires a stable WiFi connection and a direct connection to the web server at the configured IP address. Therefore there is no offline functionality.
+   - **Web Server:** Must be accessible on the network at the configured IP address and port (default: 5000)
+   - Server must maintain stable connections with multiple clients simultaneously
 
 2. **Processing Limitations:**
-   - BeagleBone Black processing power limits complex computations
-   - Display updates debounced to 100ms minimum to prevent corruption
+   - **BeagleBone Black:** There is a limit on complex computations due to BBB processing power limitations. Display updates need to be debounced to avoid corruption over I2C (minimum 100ms between updates).
+   - **Web Server:** Must handle real-time data processing from multiple modules, Google AI API calls, and broadcast updates to all connected clients efficiently
 
 3. **Library Dependencies:**
-   - Requires specific hardware libraries (Adafruit CircuitPython, custom libraries)
-   - Library availability affects hardware functionality
+   - **Web Client:** Requires specific hardware libraries (Adafruit CircuitPython, custom libraries). Library availability affects hardware functionality.
+   - **Web Server:** Requires Flask, Flask-SocketIO, eventlet, and optional Google AI API libraries
 
 ### Design Constraints
 1. **Display Update Rate:**

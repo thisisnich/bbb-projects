@@ -16,7 +16,7 @@ from datetime import datetime
 import sys
 
 # ========== CONFIGURATION ==========
-SERVER_URL = 'http://192.168.18.89:5000'  # CHANGE THIS to your server IP
+SERVER_URL = 'http://192.168.72.161:5000'  # CHANGE THIS to your server IP
 COURT_ID = 'basketball_a'
 MODULE_ID = 'court_display_5_a'
 OLED_WIDTH = 64  # Actual OLED display is 64x32

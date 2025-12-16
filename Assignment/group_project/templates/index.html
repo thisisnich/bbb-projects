@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Module Dashboard - BBBW Development Server</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .status-bar {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .status-item {
+            text-align: center;
+        }
+        
+        .status-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .status-item .value {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .status-connected {
+            color: #00c853;
+        }
+        
+        .status-disconnected {
+            color: #d50000;
+        }
+        
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .module-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: transform 0.2s;
+        }
+        
+        .module-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .module-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .module-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .status-online {
+            background: #e8f5e9;
+            color: #00c853;
+        }
+        
+        .status-offline {
+            background: #ffebee;
+            color: #d50000;
+        }
+        
+        .data-section {
+            margin-bottom: 15px;
+        }
+        
+        .data-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .data-value {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .crowd-level {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        
+        .level-empty { background: #e3f2fd; color: #1976d2; }
+        .level-light { background: #e8f5e9; color: #388e3c; }
+        .level-normal { background: #fff3e0; color: #f57c00; }
+        .level-busy { background: #ffe0b2; color: #e65100; }
+        .level-full { background: #ffebee; color: #c62828; }
+        
+        .feedback-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        
+        .feedback-item {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feedback-rating {
+            font-size: 1.5em;
+            color: #ffb300;
+        }
+        
+        .timestamp {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .warnings-list {
+            margin-top: 10px;
+        }
+        
+        .warning-item {
+            background: #fff3cd;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 5px 0;
+            border-left: 3px solid #ffc107;
+        }
+        
+        .no-data {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .activity-log {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .log-entry {
+            padding: 10px;
+            border-left: 3px solid #667eea;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+            font-size: 0.9em;
+        }
+        
+        .log-time {
+            color: #999;
+            font-size: 0.85em;
+        }
+        
+        .test-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .test-btn:active {
+            transform: translateY(0);
+        }
+        
+        input[type="number"], input[type="text"], select, textarea {
+            font-family: inherit;
+            font-size: 0.9em;
+        }
+        
+        input[type="number"]:focus, input[type="text"]:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea {
+            resize: vertical;
+        }
+        
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .slider-label {
+            font-size: 0.8em;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .slider-value {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .alternative-item {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .alternative-item input, .alternative-item select {
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        
+        .remove-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        
+        .remove-btn:hover {
+            background: #dc2626;
+        }
+        
+        #custom-editor h3 {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+        
+        #custom-editor h4 {
+            font-size: 1em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 BBBW Multi-Module Development Dashboard</h1>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="label">Crowd Modules</div>
+                <div class="value" id="crowd-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Environment Modules</div>
+                <div class="value" id="env-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Feedback Modules</div>
+                <div class="value" id="feedback-count">0</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Server Status</div>
+                <div class="value status-connected" id="server-status">● Online</div>
+            </div>
+        </div>
+        
+        <div class="modules-grid">
+            <!-- CROWD MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">👥 Crowd Detection</div>
+                    <div class="module-status status-offline" id="crowd-module-status">Offline</div>
+                </div>
+                <div id="crowd-data">
+                    <div class="no-data">Waiting for crowd detection data...</div>
+                </div>
+            </div>
+            
+            <!-- ENVIRONMENT MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">🌡️ Environment Sensors</div>
+                    <div class="module-status status-offline" id="env-module-status">Offline</div>
+                </div>
+                <div id="environment-data">
+                    <div class="no-data">Waiting for environment data...</div>
+                </div>
+            </div>
+            
+            <!-- FEEDBACK MODULE CARD -->
+            <div class="module-card">
+                <div class="module-header">
+                    <div class="module-title">💬 User Feedback</div>
+                    <div class="module-status status-offline" id="feedback-module-status">Offline</div>
+                </div>
+                <div id="feedback-data">
+                    <div class="no-data">Waiting for feedback data...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- MODULE 5 TEST DATA CONTROL -->
+        <div class="module-card" style="margin-bottom: 20px;">
+            <div class="module-header">
+                <div class="module-title">🎮 Module 5 Display Control</div>
+                <div class="module-status status-online" id="module5-status">Ready</div>
+            </div>
+            <p style="color: #666; margin-bottom: 15px;">Send test data to Module 5 displays for testing and debugging</p>
+            
+            <!-- Quick Scenario Buttons -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                <button class="test-btn" onclick="sendTestData('normal')" style="background: #10b981;">Normal (5 people)</button>
+                <button class="test-btn" onclick="sendTestData('full')" style="background: #ef4444;">Full (9 people)</button>
+                <button class="test-btn" onclick="sendTestData('empty')" style="background: #3b82f6;">Empty (0 people)</button>
+                <button class="test-btn" onclick="sendTestData('busy')" style="background: #f59e0b;">Busy (7 people)</button>
+                <button class="test-btn" onclick="toggleCustomEditor()" style="background: #8b5cf6;">⚙️ Customize</button>
+            </div>
+            
+            <!-- Custom Data Editor (Collapsible) -->
+            <div id="custom-editor" style="display: none; margin-top: 20px; padding: 20px; background: #f9fafb; border-radius: 10px; border: 2px solid #e5e7eb;">
+                <h3 style="margin-bottom: 15px; color: #333;">Customize Individual Fields</h3>
+                <p style="color: #666; font-size: 0.9em; margin-bottom: 20px;">Override specific fields. Leave empty to use scenario defaults.</p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                    <!-- Current Status Fields -->
+                    <div style="background: white; padding: 15px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea; font-size: 1em;">Current Status</h4>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">People Count</label>
+                            <input type="number" id="custom-people" placeholder="e.g., 8" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Crowd Level</label>
+                            <select id="custom-level" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <option value="">Use scenario default</option>
+                                <option value="empty">Empty</option>
+                                <option value="light">Light</option>
+                                <option value="normal">Normal</option>
+                                <option value="busy">Busy</option>
+                                <option value="full">Full</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Wait Time (min)</label>
+                            <input type="number" id="custom-wait" placeholder="e.g., 15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Occupancy (%)</label>
+                            <input type="number" id="custom-occupancy" min="0" max="100" placeholder="e.g., 80" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                    </div>
+                    
+                    <!-- Weather Fields -->
+                    <div style="background: white; padding: 15px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea; font-size: 1em;">Weather</h4>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Temperature (°C)</label>
+                            <input type="number" id="custom-temp" placeholder="e.g., 35" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Humidity (%)</label>
+                            <input type="number" id="custom-humidity" min="0" max="100" placeholder="e.g., 70" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">UV Index</label>
+                            <input type="number" id="custom-uv" min="0" max="15" placeholder="e.g., 10" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Comfort Score</label>
+                            <input type="number" id="custom-comfort" min="0" max="5" step="0.1" placeholder="e.g., 3.5" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                    </div>
+                    
+                    <!-- Info Fields -->
+                    <div style="background: white; padding: 15px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea; font-size: 1em;">Court Info</h4>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Rating (0-5)</label>
+                            <input type="number" id="custom-rating" min="0" max="5" step="0.1" placeholder="e.g., 4.5" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Court Name</label>
+                            <input type="text" id="custom-court-name" placeholder="e.g., Basketball Court A" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Confidence (%)</label>
+                            <input type="number" id="custom-confidence" min="0" max="100" placeholder="e.g., 95" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recommendations Section -->
+                <div style="margin-top: 20px; background: white; padding: 15px; border-radius: 8px;">
+                    <h4 style="margin-bottom: 15px; color: #667eea; font-size: 1em;">💡 Recommendations & Alternatives</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Best Times Today<br><small>(comma-separated, e.g., "07:00-09:00, 20:00-22:00")</small></label>
+                            <input type="text" id="custom-best-times" placeholder="07:00-09:00, 20:00-22:00" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Avoid Times<br><small>(comma-separated, e.g., "17:00-19:00")</small></label>
+                            <input type="text" id="custom-avoid-times" placeholder="17:00-19:00" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 5px;">Next Available Slot</label>
+                            <input type="text" id="custom-next-slot" placeholder="16:15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.85em; color: #666; font-weight: 600;">Nearby Alternatives</label>
+                            <button type="button" onclick="addAlternative()" style="padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em;">+ Add Alternative</button>
+                        </div>
+                        <div id="alternatives-container" style="display: flex; flex-direction: column; gap: 10px;">
+                            <!-- Alternatives will be added here dynamically -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Historical Data Section -->
+                <div style="margin-top: 20px; background: white; padding: 15px; border-radius: 8px;">
+                    <h4 style="margin-bottom: 15px; color: #667eea; font-size: 1em;">📊 Historical Data</h4>
+                    
+                    <!-- Today's Hourly Pattern -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 10px; font-weight: 600;">Today's Hourly Pattern (8 AM - 10 PM)</label>
+                        <div id="hourly-pattern-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: 300px; overflow-y: auto; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                            <!-- Hourly sliders will be added here dynamically -->
+                        </div>
+                    </div>
+                    
+                    <!-- Weekly Pattern -->
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 10px; font-weight: 600;">Weekly Pattern (Same Time Each Day)</label>
+                        <div id="weekly-pattern-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                            <!-- Weekly sliders will be added here dynamically -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+                    <button class="test-btn" onclick="sendCustomTestData()" style="background: #10b981;">✓ Send Custom Data</button>
+                    <button class="test-btn" onclick="clearCustomFields()" style="background: #6b7280;">Clear All</button>
+                    <button class="test-btn" onclick="loadScenarioDefaults('normal')" style="background: #3b82f6; font-size: 0.85em;">Load Normal</button>
+                    <button class="test-btn" onclick="loadScenarioDefaults('full')" style="background: #ef4444; font-size: 0.85em;">Load Full</button>
+                </div>
+            </div>
+            
+            <div id="test-data-status" style="padding: 10px; border-radius: 6px; display: none; margin-top: 10px;"></div>
+        </div>
+        
+        <!-- ACTIVITY LOG -->
+        <div class="activity-log">
+            <div class="log-title">📋 Activity Log</div>
+            <div id="activity-log-content"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Connect to server
+        var socket = io.connect('http://192.168.72.161:5000');
+        
+        // Track connected modules
+        var connectedModules = {
+            crowd_detection: [],
+            environment: [],
+            feedback: []
+        };
+        
+        // Activity log
+        function addLogEntry(message, type = 'info') {
+            var logContent = $('#activity-log-content');
+            var time = new Date().toLocaleTimeString();
+            var entry = $('<div class="log-entry"></div>');
+            entry.html('<span class="log-time">[' + time + ']</span> ' + message);
+            logContent.prepend(entry);
+            
+            // Keep only last 50 entries
+            if (logContent.children().length > 50) {
+                logContent.children().last().remove();
+            }
+        }
+        
+        // Update module counts
+        function updateModuleCounts() {
+            $('#crowd-count').text(connectedModules.crowd_detection.length);
+            $('#env-count').text(connectedModules.environment.length);
+            $('#feedback-count').text(connectedModules.feedback.length);
+        }
+        
+        // Update module status indicators
+        function updateModuleStatus(moduleType, isOnline) {
+            var statusId = moduleType + '-module-status';
+            var $status = $('#' + statusId);
+            if (isOnline) {
+                $status.removeClass('status-offline').addClass('status-online').text('Online');
+            } else {
+                $status.removeClass('status-online').addClass('status-offline').text('Offline');
+            }
+        }
+        
+        // --- CROWD DATA HANDLERS ---
+        socket.on('crowd_update', function(data) {
+            addLogEntry('Crowd data received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('crowd', true);
+            
+            var html = '';
+            if (data.data) {
+                html += '<div class="data-section">';
+                html += '<div class="data-label">People Count</div>';
+                html += '<div class="data-value">' + (data.data.people_count || 0) + '</div>';
+                html += '</div>';
+                
+                if (data.data.crowd_level) {
+                    var levelClass = 'level-' + data.data.crowd_level.toLowerCase();
+                    html += '<div class="crowd-level ' + levelClass + '">' + 
+                            data.data.crowd_level.toUpperCase() + '</div>';
+                }
+                
+                html += '<div class="data-grid">';
+                if (data.data.confidence !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Confidence</div>';
+                    html += '<div class="data-value">' + (data.data.confidence * 100).toFixed(1) + '%</div>';
+                    html += '</div>';
+                }
+                if (data.data.noise_db !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Noise Level</div>';
+                    html += '<div class="data-value">' + data.data.noise_db + ' dB</div>';
+                    html += '</div>';
+                }
+                if (data.data.motion_detected !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Motion</div>';
+                    html += '<div class="data-value">' + (data.data.motion_detected ? 'Yes' : 'No') + '</div>';
+                    html += '</div>';
+                }
+                if (data.data.proximity_triggered !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Proximity</div>';
+                    html += '<div class="data-value">' + (data.data.proximity_triggered ? 'Triggered' : 'None') + '</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                if (data.timestamp) {
+                    html += '<div class="timestamp">Last update: ' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+            }
+            $('#crowd-data').html(html);
+        });
+        
+        // --- ENVIRONMENT DATA HANDLERS ---
+        socket.on('environment_update', function(data) {
+            addLogEntry('Environment data received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('env', true);
+            
+            var html = '';
+            if (data.data) {
+                html += '<div class="data-grid">';
+                if (data.data.temperature_c !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Temperature</div>';
+                    html += '<div class="data-value">' + data.data.temperature_c + '°C</div>';
+                    html += '</div>';
+                }
+                if (data.data.humidity_percent !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Humidity</div>';
+                    html += '<div class="data-value">' + data.data.humidity_percent + '%</div>';
+                    html += '</div>';
+                }
+                if (data.data.uv_index !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">UV Index</div>';
+                    html += '<div class="data-value">' + data.data.uv_index + '</div>';
+                    html += '</div>';
+                }
+                if (data.data.comfort_score !== undefined) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">Comfort Score</div>';
+                    html += '<div class="data-value">' + data.data.comfort_score + '/5.0</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                if (data.data.voc_level) {
+                    html += '<div class="data-section" style="margin-top: 15px;">';
+                    html += '<div class="data-label">Air Quality (VOC)</div>';
+                    html += '<div class="data-value">' + data.data.voc_level.toUpperCase() + 
+                            (data.data.voc_reading ? ' (' + data.data.voc_reading + ')' : '') + '</div>';
+                    html += '</div>';
+                }
+                
+                if (data.data.warnings && data.data.warnings.length > 0) {
+                    html += '<div class="warnings-list">';
+                    html += '<div class="data-label" style="margin-top: 15px;">Warnings:</div>';
+                    data.data.warnings.forEach(function(warning) {
+                        html += '<div class="warning-item">' + warning + '</div>';
+                    });
+                    html += '</div>';
+                }
+                
+                if (data.timestamp) {
+                    html += '<div class="timestamp">Last update: ' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+            }
+            $('#environment-data').html(html);
+        });
+        
+        // --- FEEDBACK DATA HANDLERS ---
+        socket.on('feedback_update', function(data) {
+            addLogEntry('Feedback received from ' + (data.module_id || 'unknown'), 'info');
+            updateModuleStatus('feedback', true);
+            
+            var html = '<div class="feedback-list">';
+            if (data.data) {
+                var item = '<div class="feedback-item">';
+                if (data.data.report_type === 'rating') {
+                    item += '<div class="feedback-rating">';
+                    for (var i = 0; i < data.data.rating; i++) {
+                        item += '⭐';
+                    }
+                    item += '</div>';
+                    item += '<div><strong>' + (data.data.question_text || 'Rating') + '</strong></div>';
+                    item += '<div>Rating: ' + data.data.rating + '/' + (data.data.rating_scale || '5') + '</div>';
+                } else if (data.data.report_type === 'text') {
+                    item += '<div><strong>' + (data.data.question_text || 'Text Feedback') + '</strong></div>';
+                    item += '<div>' + (data.data.text_response || 'No text') + '</div>';
+                    if (data.data.issue_category) {
+                        item += '<div style="margin-top: 5px;"><span style="background: #ffebee; padding: 3px 8px; border-radius: 4px; font-size: 0.85em;">' + 
+                                data.data.issue_category + '</span></div>';
+                    }
+                }
+                if (data.timestamp) {
+                    item += '<div class="timestamp">' + new Date(data.timestamp).toLocaleString() + '</div>';
+                }
+                item += '</div>';
+                html = item + html;
+            }
+            html += '</div>';
+            $('#feedback-data').html(html);
+        });
+        
+        // --- MODULE CONNECTION HANDLERS ---
+        socket.on('module_connected', function(data) {
+            if (data.module_type === 'crowd_detection' && connectedModules.crowd_detection.indexOf(data.module_id) === -1) {
+                connectedModules.crowd_detection.push(data.module_id);
+            } else if (data.module_type === 'environment' && connectedModules.environment.indexOf(data.module_id) === -1) {
+                connectedModules.environment.push(data.module_id);
+            } else if (data.module_type === 'feedback' && connectedModules.feedback.indexOf(data.module_id) === -1) {
+                connectedModules.feedback.push(data.module_id);
+            }
+            updateModuleCounts();
+            addLogEntry('Module connected: ' + data.module_id + ' (' + data.module_type + ')', 'success');
+        });
+        
+        // --- CONNECTION STATUS ---
+        socket.on('connect', function() {
+            addLogEntry('Connected to server', 'success');
+            $('#server-status').text('● Online').removeClass('status-disconnected').addClass('status-connected');
+        });
+        
+        socket.on('disconnect', function() {
+            addLogEntry('Disconnected from server', 'error');
+            $('#server-status').text('● Offline').removeClass('status-connected').addClass('status-disconnected');
+        });
+        
+        // --- INITIAL DATA SNAPSHOT (when connecting) ---
+        socket.on('current_data_snapshot', function(data) {
+            addLogEntry('Received initial data snapshot', 'info');
+            // Trigger updates for existing data
+            if (data.crowd) {
+                // Manually trigger crowd update display
+                var crowdData = data.crowd;
+                updateModuleStatus('crowd', true);
+                var html = '';
+                if (crowdData.data) {
+                    html += '<div class="data-section">';
+                    html += '<div class="data-label">People Count</div>';
+                    html += '<div class="data-value">' + (crowdData.data.people_count || 0) + '</div>';
+                    html += '</div>';
+                    if (crowdData.data.crowd_level) {
+                        var levelClass = 'level-' + crowdData.data.crowd_level.toLowerCase();
+                        html += '<div class="crowd-level ' + levelClass + '">' + 
+                                crowdData.data.crowd_level.toUpperCase() + '</div>';
+                    }
+                    html += '<div class="data-grid">';
+                    if (crowdData.data.confidence !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Confidence</div>';
+                        html += '<div class="data-value">' + (crowdData.data.confidence * 100).toFixed(1) + '%</div>';
+                        html += '</div>';
+                    }
+                    if (crowdData.data.noise_db !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Noise Level</div>';
+                        html += '<div class="data-value">' + crowdData.data.noise_db + ' dB</div>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    if (crowdData.timestamp) {
+                        html += '<div class="timestamp">Last update: ' + new Date(crowdData.timestamp).toLocaleString() + '</div>';
+                    }
+                }
+                $('#crowd-data').html(html);
+            }
+            if (data.environment) {
+                var envData = data.environment;
+                updateModuleStatus('env', true);
+                var html = '';
+                if (envData.data) {
+                    html += '<div class="data-grid">';
+                    if (envData.data.temperature_c !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Temperature</div>';
+                        html += '<div class="data-value">' + envData.data.temperature_c + '°C</div>';
+                        html += '</div>';
+                    }
+                    if (envData.data.humidity_percent !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">Humidity</div>';
+                        html += '<div class="data-value">' + envData.data.humidity_percent + '%</div>';
+                        html += '</div>';
+                    }
+                    if (envData.data.uv_index !== undefined) {
+                        html += '<div class="data-section">';
+                        html += '<div class="data-label">UV Index</div>';
+                        html += '<div class="data-value">' + envData.data.uv_index + '</div>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    if (envData.timestamp) {
+                        html += '<div class="timestamp">Last update: ' + new Date(envData.timestamp).toLocaleString() + '</div>';
+                    }
+                }
+                $('#environment-data').html(html);
+            }
+        });
+        
+        // --- MODULE 5 TEST DATA HANDLERS ---
+        function sendTestData(scenario) {
+            var courtId = 'basketball_a'; // Default court ID
+            var statusDiv = $('#test-data-status');
+            
+            statusDiv.show().html('Sending test data...').css({
+                'background': '#e3f2fd',
+                'color': '#1976d2'
+            });
+            
+            socket.emit('send_test_data_module5', {
+                'court_id': courtId,
+                'scenario': scenario
+            }, function(response) {
+                if (response && response.status === 'success') {
+                    statusDiv.show().html('✓ Test data sent successfully! Scenario: ' + scenario).css({
+                        'background': '#e8f5e9',
+                        'color': '#2e7d32'
+                    });
+                    setTimeout(function() {
+                        statusDiv.fadeOut();
+                    }, 3000);
+                    addLogEntry('Test data sent to Module 5: ' + scenario, 'success');
+                } else {
+                    statusDiv.show().html('✗ Failed to send test data').css({
+                        'background': '#ffebee',
+                        'color': '#c62828'
+                    });
+                    addLogEntry('Failed to send test data to Module 5', 'error');
+                }
+            });
+            
+            addLogEntry('Sending test data to Module 5: ' + scenario + ' scenario', 'info');
+        }
+        
+        // Toggle custom editor visibility
+        function toggleCustomEditor() {
+            var editor = $('#custom-editor');
+            if (editor.is(':visible')) {
+                editor.slideUp();
+            } else {
+                // Initialize sliders when opening editor (if not already initialized)
+                if ($('#hourly-pattern-container').children().length === 0) {
+                    initHourlyPattern();
+                }
+                if ($('#weekly-pattern-container').children().length === 0) {
+                    initWeeklyPattern();
+                }
+                editor.slideDown();
+            }
+        }
+        
+        // Send custom test data
+        function sendCustomTestData() {
+            var customData = {};
+            var hasData = false;
+            
+            // Collect custom data from form fields
+            var people = $('#custom-people').val();
+            if (people) {
+                customData['current.people_count'] = parseInt(people);
+                hasData = true;
+            }
+            
+            var level = $('#custom-level').val();
+            if (level) {
+                customData['current.crowd_level'] = level;
+                hasData = true;
+            }
+            
+            var wait = $('#custom-wait').val();
+            if (wait) {
+                customData['current.estimated_wait_min'] = parseInt(wait);
+                hasData = true;
+            }
+            
+            var occupancy = $('#custom-occupancy').val();
+            if (occupancy) {
+                customData['current.occupancy'] = parseFloat(occupancy) / 100;
+                hasData = true;
+            }
+            
+            var temp = $('#custom-temp').val();
+            if (temp) {
+                customData['weather.temp_c'] = parseInt(temp);
+                hasData = true;
+            }
+            
+            var humidity = $('#custom-humidity').val();
+            if (humidity) {
+                customData['weather.humidity_percent'] = parseInt(humidity);
+                hasData = true;
+            }
+            
+            var uv = $('#custom-uv').val();
+            if (uv) {
+                customData['weather.uv_index'] = parseInt(uv);
+                hasData = true;
+            }
+            
+            var comfort = $('#custom-comfort').val();
+            if (comfort) {
+                customData['weather.comfort_score'] = parseFloat(comfort);
+                hasData = true;
+            }
+            
+            var rating = $('#custom-rating').val();
+            if (rating) {
+                customData['info.rating_avg'] = parseFloat(rating);
+                hasData = true;
+            }
+            
+            var courtName = $('#custom-court-name').val();
+            if (courtName) {
+                customData['info.court_name'] = courtName;
+                hasData = true;
+            }
+            
+            var confidence = $('#custom-confidence').val();
+            if (confidence) {
+                customData['current.confidence'] = parseFloat(confidence) / 100;
+                hasData = true;
+            }
+            
+            // Recommendations fields
+            var bestTimes = $('#custom-best-times').val().trim();
+            if (bestTimes) {
+                // Convert comma-separated string to array
+                customData['recommendations.best_times_today'] = bestTimes.split(',').map(function(t) { return t.trim(); });
+                hasData = true;
+            }
+            
+            var avoidTimes = $('#custom-avoid-times').val().trim();
+            if (avoidTimes) {
+                customData['recommendations.avoid_times'] = avoidTimes.split(',').map(function(t) { return t.trim(); });
+                hasData = true;
+            }
+            
+            var nextSlot = $('#custom-next-slot').val().trim();
+            if (nextSlot) {
+                customData['recommendations.next_available_slot'] = nextSlot;
+                hasData = true;
+            }
+            
+            // Collect alternatives from form inputs
+            var alternatives = [];
+            $('.alternative-item').each(function() {
+                var name = $(this).find('.alt-name').val().trim();
+                var distance = $(this).find('.alt-distance').val();
+                var people = $(this).find('.alt-people').val();
+                var status = $(this).find('.alt-status').val();
+                var occupancy = $(this).find('.alt-occupancy').val();
+                
+                if (name && distance && people !== '' && status && occupancy !== '') {
+                    alternatives.push({
+                        name: name,
+                        distance_m: parseInt(distance),
+                        people: parseInt(people),
+                        status: status,
+                        occupancy: parseFloat(occupancy) / 100
+                    });
+                }
+            });
+            if (alternatives.length > 0) {
+                customData['recommendations.nearby_alternatives'] = alternatives;
+                hasData = true;
+            }
+            
+            // Collect hourly pattern from sliders (send all hours if sliders exist)
+            var hourlyPattern = [];
+            for (var hour = 8; hour <= 22; hour++) {
+                var slider = $('#hourly-' + hour);
+                if (slider.length) {
+                    hourlyPattern.push({
+                        hour: hour,
+                        occupancy: parseFloat(slider.val()) / 100
+                    });
+                }
+            }
+            if (hourlyPattern.length > 0) {
+                customData['patterns.today_hourly'] = hourlyPattern;
+                hasData = true;
+            }
+            
+            // Collect weekly pattern from sliders (send all days if sliders exist)
+            var weeklyPattern = [];
+            var days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            days.forEach(function(day) {
+                var slider = $('#weekly-' + day.toLowerCase());
+                if (slider.length) {
+                    weeklyPattern.push({
+                        day: day,
+                        occupancy: parseFloat(slider.val()) / 100
+                    });
+                }
+            });
+            if (weeklyPattern.length > 0) {
+                customData['patterns.week_same_time'] = weeklyPattern;
+                hasData = true;
+            }
+            
+            var statusDiv = $('#test-data-status');
+            
+            if (!hasData) {
+                statusDiv.show().html('⚠ Please fill at least one field or use scenario buttons').css({
+                    'background': '#fff3cd',
+                    'color': '#856404'
+                });
+                setTimeout(function() {
+                    statusDiv.fadeOut();
+                }, 3000);
+                return;
+            }
+            
+            statusDiv.show().html('Sending custom test data...').css({
+                'background': '#e3f2fd',
+                'color': '#1976d2'
+            });
+            
+            socket.emit('send_test_data_module5', {
+                'court_id': 'basketball_a',
+                'scenario': 'normal', // Base scenario
+                'custom_data': customData
+            }, function(response) {
+                if (response && response.status === 'success') {
+                    statusDiv.show().html('✓ Custom test data sent successfully!').css({
+                        'background': '#e8f5e9',
+                        'color': '#2e7d32'
+                    });
+                    setTimeout(function() {
+                        statusDiv.fadeOut();
+                    }, 3000);
+                    addLogEntry('Custom test data sent to Module 5', 'success');
+                } else {
+                    statusDiv.show().html('✗ Failed to send custom test data').css({
+                        'background': '#ffebee',
+                        'color': '#c62828'
+                    });
+                    addLogEntry('Failed to send custom test data to Module 5', 'error');
+                }
+            });
+            
+            addLogEntry('Sending custom test data to Module 5', 'info');
+        }
+        
+        // Clear all custom fields
+        function clearCustomFields() {
+            $('#custom-people').val('');
+            $('#custom-level').val('');
+            $('#custom-wait').val('');
+            $('#custom-occupancy').val('');
+            $('#custom-temp').val('');
+            $('#custom-humidity').val('');
+            $('#custom-uv').val('');
+            $('#custom-comfort').val('');
+            $('#custom-rating').val('');
+            $('#custom-court-name').val('');
+            $('#custom-confidence').val('');
+            $('#custom-best-times').val('');
+            $('#custom-avoid-times').val('');
+            $('#custom-next-slot').val('');
+            $('#alternatives-container').empty();
+            // Reset hourly sliders to default (50 = 0.5)
+            for (var hour = 8; hour <= 22; hour++) {
+                $('#hourly-' + hour).val(50);
+                $('#hourly-' + hour + '-value').text('50%');
+            }
+            // Reset weekly sliders to default (50 = 0.5)
+            var days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+            days.forEach(function(day) {
+                $('#weekly-' + day).val(50);
+                $('#weekly-' + day + '-value').text('50%');
+            });
+        }
+        
+        // Add alternative court
+        function addAlternative() {
+            var container = $('#alternatives-container');
+            var index = container.children().length;
+            var html = '<div class="alternative-item" data-index="' + index + '">' +
+                '<input type="text" class="alt-name" placeholder="Court Name" value="Court ' + String.fromCharCode(66 + index) + '">' +
+                '<input type="number" class="alt-distance" placeholder="Distance (m)" value="' + (200 + index * 300) + '" min="0">' +
+                '<input type="number" class="alt-people" placeholder="People" value="' + (index + 2) + '" min="0">' +
+                '<select class="alt-status">' +
+                '<option value="empty">Empty</option>' +
+                '<option value="light" selected>Light</option>' +
+                '<option value="normal">Normal</option>' +
+                '<option value="busy">Busy</option>' +
+                '<option value="full">Full</option>' +
+                '</select>' +
+                '<input type="range" class="alt-occupancy" min="0" max="100" value="' + (20 + index * 15) + '" oninput="updateAltOccupancy(this)">' +
+                '<button type="button" class="remove-btn" onclick="removeAlternative(this)">×</button>' +
+                '</div>';
+            container.append(html);
+        }
+        
+        // Remove alternative court
+        function removeAlternative(btn) {
+            $(btn).closest('.alternative-item').remove();
+        }
+        
+        // Update alternative occupancy display
+        function updateAltOccupancy(slider) {
+            // Value is already shown by the slider, but we could add a display if needed
+        }
+        
+        // Initialize hourly pattern sliders
+        function initHourlyPattern() {
+            var container = $('#hourly-pattern-container');
+            container.empty();
+            for (var hour = 8; hour <= 22; hour++) {
+                var hour12 = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+                var ampm = hour >= 12 ? 'PM' : 'AM';
+                var html = '<div class="slider-container">' +
+                    '<div class="slider-label">' +
+                    '<span>' + hour12 + ':00 ' + ampm + '</span>' +
+                    '<span class="slider-value" id="hourly-' + hour + '-value">50%</span>' +
+                    '</div>' +
+                    '<input type="range" id="hourly-' + hour + '" min="0" max="100" value="50" ' +
+                    'oninput="document.getElementById(\'hourly-' + hour + '-value\').textContent = this.value + \'%\'">' +
+                    '</div>';
+                container.append(html);
+            }
+        }
+        
+        // Initialize weekly pattern sliders
+        function initWeeklyPattern() {
+            var container = $('#weekly-pattern-container');
+            container.empty();
+            var days = [
+                {key: 'mon', name: 'Monday'},
+                {key: 'tue', name: 'Tuesday'},
+                {key: 'wed', name: 'Wednesday'},
+                {key: 'thu', name: 'Thursday'},
+                {key: 'fri', name: 'Friday'},
+                {key: 'sat', name: 'Saturday'},
+                {key: 'sun', name: 'Sunday'}
+            ];
+            days.forEach(function(day) {
+                var html = '<div class="slider-container">' +
+                    '<div class="slider-label">' +
+                    '<span>' + day.name.substring(0, 3) + '</span>' +
+                    '<span class="slider-value" id="weekly-' + day.key + '-value">50%</span>' +
+                    '</div>' +
+                    '<input type="range" id="weekly-' + day.key + '" min="0" max="100" value="50" ' +
+                    'oninput="document.getElementById(\'weekly-' + day.key + '-value\').textContent = this.value + \'%\'">' +
+                    '</div>';
+                container.append(html);
+            });
+        }
+        
+        
+        // Load scenario defaults into custom fields
+        function loadScenarioDefaults(scenario) {
+            clearCustomFields();
+            
+            var defaults = {
+                'normal': {
+                    people: 5,
+                    level: 'normal',
+                    wait: 10,
+                    temp: 28,
+                    humidity: 60,
+                    uv: 6,
+                    comfort: 3.5,
+                    rating: 4.2,
+                    occupancy: 50
+                },
+                'full': {
+                    people: 9,
+                    level: 'full',
+                    wait: 30,
+                    temp: 32,
+                    humidity: 70,
+                    uv: 9,
+                    comfort: 2.5,
+                    rating: 3.8,
+                    occupancy: 90
+                },
+                'empty': {
+                    people: 0,
+                    level: 'empty',
+                    wait: 0,
+                    temp: 25,
+                    humidity: 50,
+                    uv: 4,
+                    comfort: 4.5,
+                    rating: 4.8,
+                    occupancy: 0
+                },
+                'busy': {
+                    people: 7,
+                    level: 'busy',
+                    wait: 20,
+                    temp: 30,
+                    humidity: 65,
+                    uv: 8,
+                    comfort: 3.0,
+                    rating: 4.0,
+                    occupancy: 70
+                }
+            };
+            
+            var data = defaults[scenario] || defaults['normal'];
+            
+            $('#custom-people').val(data.people);
+            $('#custom-level').val(data.level);
+            $('#custom-wait').val(data.wait);
+            $('#custom-temp').val(data.temp);
+            $('#custom-humidity').val(data.humidity);
+            $('#custom-uv').val(data.uv);
+            $('#custom-comfort').val(data.comfort);
+            $('#custom-rating').val(data.rating);
+            $('#custom-occupancy').val(data.occupancy);
+        }
+        
+        socket.on('test_data_sent', function(data) {
+            var statusDiv = $('#test-data-status');
+            statusDiv.show().html('✓ Test data sent successfully! Scenario: ' + data.scenario + 
+                                 ' (Court: ' + data.court_id + ')').css({
+                'background': '#e8f5e9',
+                'color': '#2e7d32'
+            });
+            
+            setTimeout(function() {
+                statusDiv.fadeOut();
+            }, 3000);
+            
+            addLogEntry('Test data sent to Module 5: ' + data.scenario, 'success');
+        });
+        
+        // Initial log entry
+        addLogEntry('Dashboard initialized. Waiting for module connections...', 'info');
+    </script>
+</body>
+</html>

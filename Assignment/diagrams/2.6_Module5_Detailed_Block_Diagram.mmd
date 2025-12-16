@@ -1,0 +1,60 @@
+graph LR
+    subgraph "Network Layer"
+        AP[Access Point<br/>Wi-Fi Hub]
+        SERVER[PC Web Server<br/>Flask + Socket.IO]
+        BBBW[BBBW Board<br/>BeagleBone Black<br/>Wireless]
+    end
+    
+    subgraph "Interface Layer"
+        CAPE[Mikroe Cape Board<br/>Interface Board]
+    end
+    
+    subgraph "Input Layer - Slot 2 & 4"
+        POT[POT Click Board<br/>Slot 2<br/>P9_37 AIN2<br/>0.0-0.545V]
+        KEYPAD[Analog Key Click<br/>Slot 4<br/>P9_39 AIN0<br/>6 Buttons T1-T6]
+    end
+    
+    subgraph "Output Layer - Slot 1 & 3"
+        OLED[OLED Click<br/>Slot 1<br/>I2C 0x3C<br/>64x32 pixels]
+        LEDMAT[8x8 LED Matrix<br/>Slot 3<br/>SPI0<br/>64 pixels]
+    end
+    
+    %% Network connections (wireless)
+    SERVER -.->|Wi-Fi<br/>Socket.IO| AP
+    BBBW -.->|Wi-Fi<br/>Socket.IO| AP
+    
+    %% BBBW to Cape (wired)
+    BBBW -->|Power/GND| CAPE
+    BBBW -->|I2C Bus<br/>P9_19 SCL<br/>P9_20 SDA| CAPE
+    BBBW -->|SPI Bus<br/>P9_17 CS<br/>P9_22 SCK<br/>P9_29 MISO<br/>P9_18 MOSI| CAPE
+    BBBW -->|ADC Channels<br/>P9_37 AIN2<br/>P9_39 AIN0| CAPE
+    
+    %% Cape to Input Devices
+    CAPE -->|Power/GND| POT
+    CAPE -->|Analog Signal<br/>Input| POT
+    CAPE -->|Power/GND| KEYPAD
+    CAPE -->|Analog Signal<br/>Input| KEYPAD
+    
+    %% Cape to Output Devices
+    CAPE -->|Power/GND| OLED
+    CAPE -->|Digital Signal<br/>I2C Output| OLED
+    CAPE -->|Power/GND| LEDMAT
+    CAPE -->|Digital Signal<br/>SPI Output| LEDMAT
+    
+    %% Signal flow annotations
+    POT -.->|User Scroll<br/>Control| CAPE
+    KEYPAD -.->|User Button<br/>Press| CAPE
+    CAPE -.->|Display Text<br/>Status Info| OLED
+    CAPE -.->|Display Graphics<br/>Infographics| LEDMAT
+    
+    %% Styling
+    classDef network fill:#ff9500,stroke:#333,stroke-width:2px,color:#000
+    classDef interface fill:#4a90e2,stroke:#333,stroke-width:2px,color:#fff
+    classDef input fill:#50c878,stroke:#333,stroke-width:2px,color:#000
+    classDef output fill:#ff6b6b,stroke:#333,stroke-width:2px,color:#000
+    
+    class SERVER,BBBW,AP network
+    class CAPE interface
+    class POT,KEYPAD input
+    class OLED,LEDMAT output
+

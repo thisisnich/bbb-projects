@@ -1,0 +1,55 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point]
+    
+    %% Server Components
+    SERVER[PC Web Server]
+    FLASK[Flask Application]
+    SOCKETIO[Socket.IO Server]
+    PROCESS[Data Processing]
+    
+    %% External Connections
+    MOD1[Module 1<br/>Crowd Detection]
+    MOD2[Module 2<br/>Environment]
+    MOD3[Module 3<br/>Feedback]
+    WEBPAGE[Webpage<br/>Dashboard]
+    
+    %% Output Destinations
+    MOD5[Module 5<br/>Display Client]
+    DASHBOARD[Dashboard<br/>Web Interface]
+    
+    %% Wireless connections
+    SERVER -.->|Wi-Fi| AP
+    MOD1 -.->|Wi-Fi| AP
+    MOD2 -.->|Wi-Fi| AP
+    MOD3 -.->|Wi-Fi| AP
+    WEBPAGE -.->|Wi-Fi| AP
+    MOD5 -.->|Wi-Fi| AP
+    DASHBOARD -.->|Wi-Fi| AP
+    
+    %% Internal connections
+    SERVER --> FLASK
+    FLASK --> SOCKETIO
+    SOCKETIO --> PROCESS
+    
+    %% Input connections (data coming INTO server)
+    MOD1 -->|Video Frames| SOCKETIO
+    MOD2 -->|Sensor Data| SOCKETIO
+    MOD3 -->|User Ratings| SOCKETIO
+    WEBPAGE -->|Test Data| SOCKETIO
+    
+    %% Output connections (data going OUT from server)
+    PROCESS -->|DisplayUpdate| AP
+    AP -.->|Wi-Fi| MOD5
+    PROCESS -->|CrowdDataUpdate| AP
+    AP -.->|Wi-Fi| DASHBOARD
+    PROCESS -->|VideoFrameUpdate| AP
+    AP -.->|Wi-Fi| DASHBOARD
+    
+    %% Styling - Simple black and white
+    classDef block fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    
+    class SERVER,FLASK,SOCKETIO,PROCESS,MOD1,MOD2,MOD3,WEBPAGE,MOD5,DASHBOARD block
+    class AP wireless
+

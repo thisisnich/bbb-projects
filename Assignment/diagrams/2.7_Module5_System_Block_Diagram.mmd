@@ -1,0 +1,41 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point]
+    
+    %% Left: Server
+    SERVER[PC Web Server]
+    
+    %% Right: Client Hardware
+    BBBW[BBBW Board]
+    CAPE[Mikroe Cape Board]
+    
+    %% Input Devices
+    POT[POT Click<br/>Slot 2]
+    KEYPAD[Analog Key Click<br/>Slot 4]
+    
+    %% Output Devices
+    OLED[OLED Click<br/>Slot 1]
+    LEDMAT[8x8 LED Matrix<br/>Slot 3]
+    
+    %% Wireless connections
+    SERVER -.->|Wi-Fi| AP
+    BBBW -.->|Wi-Fi| AP
+    
+    %% Hardware connections
+    BBBW -->|Power/GND<br/>Signals| CAPE
+    
+    CAPE -->|Power/GND<br/>Analog| POT
+    
+    CAPE -->|Power/GND<br/>Analog| KEYPAD
+    
+    CAPE -->|Power/GND<br/>I2C| OLED
+    
+    CAPE -->|Power/GND<br/>SPI| LEDMAT
+    
+    %% Styling - Simple black and white
+    classDef block fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    classDef accesspoint fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 3 3,color:#000
+    
+    class SERVER,BBBW,CAPE,POT,KEYPAD,OLED,LEDMAT block
+    class AP accesspoint

@@ -1,0 +1,9 @@
+flask
+flask-socketio
+eventlet
+python-socketio
+Adafruit-BBIO
+adafruit-circuitpython-ssd1306
+Pillow
+
+

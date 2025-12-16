@@ -218,11 +218,34 @@
             margin-bottom: 8px;
             background: #f9f9f9;
             font-size: 0.9em;
+            word-wrap: break-word;
         }
         
         .log-time {
             color: #999;
             font-size: 0.85em;
+        }
+        
+        .log-module {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .log-data {
+            margin-top: 5px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-data pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
         
         .test-btn {
@@ -243,6 +266,27 @@
         }
         
         .test-btn:active {
+            transform: translateY(0);
+        }
+        
+        .test-btn-small {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-btn-small:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .test-btn-small:active {
             transform: translateY(0);
         }
     </style>
@@ -277,6 +321,15 @@
                     <div class="module-title">👥 Crowd Detection</div>
                     <div class="module-status status-offline" id="crowd-module-status">Offline</div>
                 </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="test-btn-small" onclick="sendCrowdTestData('empty')" style="background: #3b82f6;">Empty</button>
+                        <button class="test-btn-small" onclick="sendCrowdTestData('light')" style="background: #10b981;">Light</button>
+                        <button class="test-btn-small" onclick="sendCrowdTestData('normal')" style="background: #f59e0b;">Normal</button>
+                        <button class="test-btn-small" onclick="sendCrowdTestData('busy')" style="background: #f97316;">Busy</button>
+                        <button class="test-btn-small" onclick="sendCrowdTestData('full')" style="background: #ef4444;">Full</button>
+                    </div>
+                </div>
                 <div id="crowd-data">
                     <div class="no-data">Waiting for crowd detection data...</div>
                 </div>
@@ -288,6 +341,14 @@
                     <div class="module-title">🌡️ Environment Sensors</div>
                     <div class="module-status status-offline" id="env-module-status">Offline</div>
                 </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="test-btn-small" onclick="sendEnvTestData('cool')" style="background: #3b82f6;">Cool</button>
+                        <button class="test-btn-small" onclick="sendEnvTestData('normal')" style="background: #10b981;">Normal</button>
+                        <button class="test-btn-small" onclick="sendEnvTestData('hot')" style="background: #f59e0b;">Hot</button>
+                        <button class="test-btn-small" onclick="sendEnvTestData('extreme')" style="background: #ef4444;">Extreme</button>
+                    </div>
+                </div>
                 <div id="environment-data">
                     <div class="no-data">Waiting for environment data...</div>
                 </div>
@@ -298,6 +359,18 @@
                 <div class="module-header">
                     <div class="module-title">💬 User Feedback</div>
                     <div class="module-status status-offline" id="feedback-module-status">Offline</div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('rating', 1)" style="background: #ef4444;">⭐ 1</button>
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('rating', 2)" style="background: #f97316;">⭐⭐ 2</button>
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('rating', 3)" style="background: #f59e0b;">⭐⭐⭐ 3</button>
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('rating', 4)" style="background: #10b981;">⭐⭐⭐⭐ 4</button>
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('rating', 5)" style="background: #10b981;">⭐⭐⭐⭐⭐ 5</button>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="test-btn-small" onclick="sendFeedbackTestData('text', 0)" style="background: #6366f1;">Text Issue</button>
+                    </div>
                 </div>
                 <div id="feedback-data">
                     <div class="no-data">Waiting for feedback data...</div>
@@ -321,9 +394,9 @@
             <div id="test-data-status" style="padding: 10px; border-radius: 6px; display: none; margin-top: 10px;"></div>
         </div>
         
-        <!-- ACTIVITY LOG -->
+        <!-- BOARD LOGS -->
         <div class="activity-log">
-            <div class="log-title">📋 Activity Log</div>
+            <div class="log-title">📋 Board Logs - Received from BBBW Modules</div>
             <div id="activity-log-content"></div>
         </div>
     </div>
@@ -347,11 +420,46 @@
             entry.html('<span class="log-time">[' + time + ']</span> ' + message);
             logContent.prepend(entry);
             
-            // Keep only last 50 entries
-            if (logContent.children().length > 50) {
+            // Keep only last 100 entries
+            if (logContent.children().length > 100) {
                 logContent.children().last().remove();
             }
         }
+        
+        // Board log handler - shows detailed logs from BBBW modules
+        socket.on('board_log', function(logData) {
+            var logContent = $('#activity-log-content');
+            var time = new Date(logData.timestamp).toLocaleTimeString();
+            var entry = $('<div class="log-entry"></div>');
+            
+            var moduleTypeColors = {
+                'crowd_detection': '#3b82f6',
+                'environment': '#10b981',
+                'feedback': '#f59e0b',
+                'client': '#6366f1'
+            };
+            
+            var color = moduleTypeColors[logData.module_type] || '#667eea';
+            
+            var html = '<span class="log-time">[' + time + ']</span> ';
+            html += '<span class="log-module" style="color: ' + color + ';">[' + 
+                    (logData.module_id || 'unknown') + ']</span> ';
+            html += '<strong>' + logData.event + '</strong>';
+            
+            if (logData.data) {
+                html += '<div class="log-data">';
+                html += '<pre>' + JSON.stringify(logData.data, null, 2) + '</pre>';
+                html += '</div>';
+            }
+            
+            entry.html(html);
+            logContent.prepend(entry);
+            
+            // Keep only last 100 entries
+            if (logContent.children().length > 100) {
+                logContent.children().last().remove();
+            }
+        });
         
         // Update module counts
         function updateModuleCounts() {
@@ -610,6 +718,32 @@
                 $('#environment-data').html(html);
             }
         });
+        
+        // --- TEST DATA HANDLERS FOR EACH MODULE ---
+        function sendCrowdTestData(scenario) {
+            socket.emit('send_test_data_crowd', {
+                'scenario': scenario
+            });
+            addLogEntry('Sending test crowd data: ' + scenario + ' scenario', 'info');
+        }
+        
+        function sendEnvTestData(scenario) {
+            socket.emit('send_test_data_environment', {
+                'scenario': scenario
+            });
+            addLogEntry('Sending test environment data: ' + scenario + ' scenario', 'info');
+        }
+        
+        function sendFeedbackTestData(feedbackType, ratingValue) {
+            socket.emit('send_test_data_feedback', {
+                'feedback_type': feedbackType,
+                'rating_value': ratingValue
+            });
+            var msg = feedbackType === 'rating' ? 
+                'Sending test feedback: Rating ' + ratingValue + ' stars' : 
+                'Sending test feedback: Text issue report';
+            addLogEntry(msg, 'info');
+        }
         
         // --- MODULE 5 TEST DATA HANDLERS ---
         function sendTestData(scenario) {

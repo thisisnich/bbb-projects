@@ -1,0 +1,54 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point]
+    
+    %% Left: Input Modules
+    MOD1[Module 1<br/>Crowd Detection]
+    MOD2[Module 2<br/>Environment]
+    MOD3[Module 3<br/>Feedback]
+    
+    %% Center: Web Server (includes Socket.IO)
+    SERVER[PC Web Server<br/>Flask + Socket.IO]
+    AI_PROC[Google AI API<br/>People Counting]
+    CONFIDENCE[Confidence Calculator<br/>Multi-sensor Fusion]
+    DATA_GEN[Data Generator<br/>Module 5 Display Data]
+    
+    %% Right: Output Destinations
+    MOD5[Module 5<br/>Display Client]
+    DASHBOARD[Webpage<br/>Dashboard]
+    
+    %% Wireless connections - Inputs to Server
+    MOD1 -.->|Wi-Fi<br/>Video Frames| AP
+    MOD2 -.->|Wi-Fi<br/>Sensor Data| AP
+    MOD3 -.->|Wi-Fi<br/>User Ratings| AP
+    AP -->|Wi-Fi| SERVER
+    
+    %% Processing within Web Server
+    SERVER --> AI_PROC
+    SERVER --> CONFIDENCE
+    AI_PROC --> CONFIDENCE
+    CONFIDENCE --> DATA_GEN
+    
+    %% Output from Server
+    SERVER -->|DisplayUpdate| AP
+    SERVER -->|CrowdDataUpdate| AP
+    SERVER -->|VideoFrameUpdate| AP
+    
+    %% Wireless connections - Outputs from Server
+    AP -.->|Wi-Fi<br/>DisplayUpdate| MOD5
+    AP -.->|Wi-Fi<br/>CrowdDataUpdate| DASHBOARD
+    AP -.->|Wi-Fi<br/>VideoFrameUpdate| DASHBOARD
+    
+    %% Styling - Simple black and white
+    classDef input fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef server fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef process fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef output fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    classDef accesspoint fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 3 3,color:#000
+    
+    class MOD1,MOD2,MOD3 input
+    class SERVER server
+    class AI_PROC,CONFIDENCE,DATA_GEN process
+    class MOD5,DASHBOARD output
+    class AP accesspoint
