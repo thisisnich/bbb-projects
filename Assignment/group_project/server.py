@@ -4,6 +4,9 @@ from eventlet import wsgi
 from flask_socketio import SocketIO, emit
 from datetime import datetime
 import json
+import random
+import threading
+import time
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
@@ -21,6 +24,200 @@ current_data = {
     'environment': None,
     'feedback': []
 }
+
+# --- Mock Mode State ---
+mock_state = {
+    'active': False,
+    'scenario': 'normal',  # 'empty', 'light', 'normal', 'busy', 'full'
+    'update_interval': 30,  # seconds
+    'threads': []
+}
+
+# ===== MOCK DATA GENERATORS =====
+
+def generate_mock_crowd_data(scenario='normal'):
+    """Generate realistic mock crowd detection data"""
+    scenarios = {
+        'empty': {'people': (0, 1), 'noise': (30, 45), 'motion': 0.1, 'proximity': 0.1},
+        'light': {'people': (1, 3), 'noise': (45, 60), 'motion': 0.4, 'proximity': 0.3},
+        'normal': {'people': (4, 6), 'noise': (55, 70), 'motion': 0.7, 'proximity': 0.6},
+        'busy': {'people': (6, 8), 'noise': (65, 80), 'motion': 0.9, 'proximity': 0.8},
+        'full': {'people': (8, 10), 'noise': (75, 90), 'motion': 1.0, 'proximity': 1.0}
+    }
+    
+    config = scenarios.get(scenario, scenarios['normal'])
+    people_count = random.randint(*config['people'])
+    
+    # Determine crowd level based on people count
+    if people_count == 0:
+        level = 'empty'
+    elif people_count <= 2:
+        level = 'light'
+    elif people_count <= 5:
+        level = 'normal'
+    elif people_count <= 7:
+        level = 'busy'
+    else:
+        level = 'full'
+    
+    return {
+        'module_id': 'mock_module1',
+        'module_type': 'crowd_detection',
+        'timestamp': datetime.now().isoformat(),
+        'data': {
+            'people_count': people_count,
+            'crowd_level': level,
+            'confidence': round(random.uniform(0.85, 0.98), 2),
+            'noise_db': random.randint(*config['noise']),
+            'motion_detected': random.random() < config['motion'],
+            'proximity_triggered': random.random() < config['proximity']
+        }
+    }
+
+def generate_mock_environment_data(scenario='normal'):
+    """Generate realistic mock environment sensor data"""
+    # Time-based variations (hotter during day, cooler at night)
+    current_hour = datetime.now().hour
+    is_daytime = 8 <= current_hour <= 18
+    
+    scenarios = {
+        'empty': {'temp': (22, 26), 'humidity': (40, 55), 'uv': (2, 5), 'comfort': (4.0, 5.0)},
+        'light': {'temp': (24, 28), 'humidity': (45, 60), 'uv': (4, 6), 'comfort': (3.5, 4.5)},
+        'normal': {'temp': (26, 30), 'humidity': (50, 65), 'uv': (5, 8), 'comfort': (3.0, 4.0)},
+        'busy': {'temp': (28, 32), 'humidity': (55, 70), 'uv': (7, 10), 'comfort': (2.5, 3.5)},
+        'full': {'temp': (30, 35), 'humidity': (60, 75), 'uv': (8, 11), 'comfort': (2.0, 3.0)}
+    }
+    
+    config = scenarios.get(scenario, scenarios['normal'])
+    
+    # Adjust temperature based on time of day
+    temp_range = config['temp']
+    if not is_daytime:
+        temp_range = (temp_range[0] - 5, temp_range[1] - 5)
+    
+    temp = random.randint(*temp_range)
+    humidity = random.randint(*config['humidity'])
+    uv = random.randint(*config['uv']) if is_daytime else random.randint(0, 2)
+    comfort = round(random.uniform(*config['comfort']), 1)
+    
+    # Determine VOC level
+    if temp > 32 or humidity > 70:
+        voc_level = 'moderate'
+    elif temp > 35 or humidity > 80:
+        voc_level = 'poor'
+    else:
+        voc_level = 'good'
+    
+    # Generate warnings
+    warnings = []
+    if uv > 7:
+        warnings.append('High UV - Use sunscreen')
+    if temp > 32:
+        warnings.append('High temperature - Stay hydrated')
+    if humidity > 70:
+        warnings.append('High humidity')
+    
+    return {
+        'module_id': 'mock_module2',
+        'module_type': 'environment',
+        'timestamp': datetime.now().isoformat(),
+        'data': {
+            'temperature_c': temp,
+            'humidity_percent': humidity,
+            'uv_index': uv,
+            'voc_level': voc_level,
+            'voc_reading': random.randint(50, 500) if voc_level != 'good' else random.randint(0, 100),
+            'comfort_score': comfort,
+            'warnings': warnings
+        }
+    }
+
+def generate_mock_feedback_data(scenario='normal'):
+    """Generate realistic mock feedback data"""
+    scenarios = {
+        'empty': {'rating': (4, 5), 'issues': ['None', 'Too quiet']},
+        'light': {'rating': (4, 5), 'issues': ['Clean', 'Well maintained']},
+        'normal': {'rating': (3, 4), 'issues': ['Slightly crowded', 'Good atmosphere']},
+        'busy': {'rating': (2, 4), 'issues': ['Very crowded', 'Waiting time', 'Noisy']},
+        'full': {'rating': (2, 3), 'issues': ['Overcrowded', 'Long wait', 'Need maintenance']}
+    }
+    
+    config = scenarios.get(scenario, scenarios['normal'])
+    
+    # Alternate between rating and text feedback
+    report_type = random.choice(['rating', 'text'])
+    
+    if report_type == 'rating':
+        questions = [
+            'How would you rate this facility?',
+            'Overall satisfaction?',
+            'Would you recommend this court?'
+        ]
+        return {
+            'module_id': 'mock_module3',
+            'module_type': 'feedback',
+            'timestamp': datetime.now().isoformat(),
+            'data': {
+                'report_type': 'rating',
+                'question_text': random.choice(questions),
+                'rating': random.randint(*config['rating']),
+                'rating_scale': 5
+            }
+        }
+    else:
+        questions = [
+            'Any issues to report?',
+            'What can we improve?',
+            'Maintenance needed?'
+        ]
+        categories = ['cleanliness', 'maintenance', 'crowding', 'equipment', 'other']
+        return {
+            'module_id': 'mock_module3',
+            'module_type': 'feedback',
+            'timestamp': datetime.now().isoformat(),
+            'data': {
+                'report_type': 'text',
+                'question_text': random.choice(questions),
+                'text_response': random.choice(config['issues']),
+                'issue_category': random.choice(categories)
+            }
+        }
+
+def mock_data_loop():
+    """Background thread that generates mock data periodically"""
+    print(f"[{datetime.now()}] Mock data generator started")
+    
+    while mock_state['active']:
+        try:
+            scenario = mock_state['scenario']
+            
+            # Generate and emit mock data for all three modules
+            crowd_data = generate_mock_crowd_data(scenario)
+            socketio.emit('crowd_update', crowd_data)
+            current_data['crowd'] = crowd_data
+            
+            env_data = generate_mock_environment_data(scenario)
+            socketio.emit('environment_update', env_data)
+            current_data['environment'] = env_data
+            
+            # Generate feedback less frequently (30% chance)
+            if random.random() < 0.3:
+                feedback_data = generate_mock_feedback_data(scenario)
+                socketio.emit('feedback_update', feedback_data)
+                current_data['feedback'].append(feedback_data)
+                if len(current_data['feedback']) > 50:
+                    current_data['feedback'].pop(0)
+            
+            print(f"[{datetime.now()}] Mock data sent (scenario: {scenario})")
+            
+            # Wait for next update
+            time.sleep(mock_state['update_interval'])
+            
+        except Exception as e:
+            print(f"[{datetime.now()}] Error in mock data loop: {e}")
+            break
+    
+    print(f"[{datetime.now()}] Mock data generator stopped")
 
 @app.route('/')
 def index():
@@ -330,22 +527,102 @@ def get_current_data():
         'timestamp': datetime.now().isoformat()
     }, indent=2)
 
+# --- Mock Mode Control Events ---
+@socketio.on('start_mock_data')
+def handle_start_mock(data=None):
+    """Start generating mock data"""
+    if not mock_state['active']:
+        mock_state['active'] = True
+        
+        # Get configuration from request
+        if data:
+            mock_state['scenario'] = data.get('scenario', 'normal')
+            mock_state['update_interval'] = data.get('update_interval', 30)
+        
+        # Start background thread
+        thread = threading.Thread(target=mock_data_loop, daemon=True)
+        thread.start()
+        mock_state['threads'].append(thread)
+        
+        print(f"[{datetime.now()}] Mock mode started (scenario: {mock_state['scenario']}, interval: {mock_state['update_interval']}s)")
+        
+        # Register mock modules
+        for module_type in ['crowd_detection', 'environment', 'feedback']:
+            module_id = f"mock_module_{module_type}"
+            if module_id not in connected_modules[module_type]:
+                connected_modules[module_type].append(module_id)
+                socketio.emit('module_connected', {
+                    'module_id': module_id,
+                    'module_type': module_type,
+                    'timestamp': datetime.now().isoformat()
+                })
+        
+        return {'status': 'success', 'message': 'Mock mode started'}
+    else:
+        return {'status': 'info', 'message': 'Mock mode already active'}
+
+@socketio.on('stop_mock_data')
+def handle_stop_mock(data=None):
+    """Stop generating mock data"""
+    if mock_state['active']:
+        mock_state['active'] = False
+        print(f"[{datetime.now()}] Mock mode stopped")
+        
+        # Remove mock modules from connected list
+        for module_type in connected_modules:
+            connected_modules[module_type] = [
+                m for m in connected_modules[module_type] if not m.startswith('mock_module')
+            ]
+        
+        return {'status': 'success', 'message': 'Mock mode stopped'}
+    else:
+        return {'status': 'info', 'message': 'Mock mode not active'}
+
+@socketio.on('update_mock_config')
+def handle_update_mock_config(data):
+    """Update mock mode configuration without restarting"""
+    if data.get('scenario'):
+        mock_state['scenario'] = data['scenario']
+        print(f"[{datetime.now()}] Mock scenario changed to: {mock_state['scenario']}")
+    
+    if data.get('update_interval'):
+        mock_state['update_interval'] = data['update_interval']
+        print(f"[{datetime.now()}] Mock update interval changed to: {mock_state['update_interval']}s")
+    
+    return {'status': 'success', 'config': {
+        'scenario': mock_state['scenario'],
+        'update_interval': mock_state['update_interval'],
+        'active': mock_state['active']
+    }}
+
 # --- Connection Events ---
 @socketio.on('connect')
 def test_connect():
     print(f'[{datetime.now()}] Client Connected: {request.sid}')
     # Send current data to newly connected client
     emit('current_data_snapshot', current_data)
+    # Send mock mode status
+    emit('mock_status', {
+        'active': mock_state['active'],
+        'scenario': mock_state['scenario'],
+        'update_interval': mock_state['update_interval']
+    })
 
 @socketio.on('disconnect')
 def test_disconnect():
     print(f'[{datetime.now()}] Client Disconnected: {request.sid}')
 
 if __name__ == '__main__':
+    import socket
+    # Get the machine's hostname to determine IP
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    
     print("=" * 60)
     print("Starting Multi-Module Web Server")
     print("Listening for: Crowd, Environment, and Feedback modules")
-    print("Server URL: http://192.168.72.161:5000")
+    print(f"Server listening on: 0.0.0.0:5000 (all interfaces)")
+    print(f"Access via: http://{local_ip}:5000 or http://192.168.72.161:5000")
     print("=" * 60)
-    wsgi.server(eventlet.listen(("192.168.72.161", 5000)), app)
+    wsgi.server(eventlet.listen(("0.0.0.0", 5000)), app)
 
