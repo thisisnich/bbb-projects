@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import eventlet
 from eventlet import wsgi
 from flask_socketio import SocketIO, emit
@@ -15,8 +15,12 @@ socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 connected_modules = {
     'crowd_detection': [],
     'environment': [],
-    'feedback': []
+    'feedback': [],
+    'display': []  # Module 5 display clients
 }
+
+# Track which socket IDs are display modules
+display_module_sockets = {}  # {socket_id: module_id}
 
 # Current data from each module type
 current_data = {
@@ -191,22 +195,20 @@ def mock_data_loop():
         try:
             scenario = mock_state['scenario']
             
-            # Generate and emit mock data for all three modules
+            # Generate mock data for all three modules
             crowd_data = generate_mock_crowd_data(scenario)
-            socketio.emit('crowd_update', crowd_data)
-            current_data['crowd'] = crowd_data
-            
             env_data = generate_mock_environment_data(scenario)
-            socketio.emit('environment_update', env_data)
-            current_data['environment'] = env_data
+            
+            # Process mock data through the actual handlers (as if real hardware sent them)
+            # This ensures the server processes them through the normal handlers
+            # which will automatically generate and send Module 5 data
+            handle_crowd_data(crowd_data)
+            handle_environment_data(env_data)
             
             # Generate feedback less frequently (30% chance)
             if random.random() < 0.3:
                 feedback_data = generate_mock_feedback_data(scenario)
-                socketio.emit('feedback_update', feedback_data)
-                current_data['feedback'].append(feedback_data)
-                if len(current_data['feedback']) > 50:
-                    current_data['feedback'].pop(0)
+                handle_feedback_data(feedback_data)
             
             print(f"[{datetime.now()}] Mock data sent (scenario: {scenario})")
             
@@ -215,6 +217,8 @@ def mock_data_loop():
             
         except Exception as e:
             print(f"[{datetime.now()}] Error in mock data loop: {e}")
+            import traceback
+            traceback.print_exc()
             break
     
     print(f"[{datetime.now()}] Mock data generator stopped")
@@ -223,17 +227,47 @@ def mock_data_loop():
 def index():
     return render_template('index.html')
 
+@app.route('/module5')
+def module5_test():
+    return render_template('module5.html')
+
+@app.route('/api/current_data')
+def get_current_data():
+    """API endpoint to get current data state for polling"""
+    # Always generate Module 5 data if we have any data from Modules 1-3
+    module5_data = None
+    if current_data.get('crowd') or current_data.get('environment'):
+        module5_data = generate_module5_from_modules(
+            court_id='basketball_a',
+            crowd_data=current_data.get('crowd'),
+            env_data=current_data.get('environment'),
+            feedback_data=current_data.get('feedback') if current_data.get('feedback') else None
+        )
+    
+    return jsonify({
+        'crowd': current_data.get('crowd'),
+        'environment': current_data.get('environment'),
+        'feedback': current_data.get('feedback', [])[-1] if current_data.get('feedback') else None,
+        'module5': module5_data,
+        'timestamp': datetime.now().isoformat()
+    })
+
 # --- Module Registration ---
 @socketio.on('module_register')
 def handle_module_register(data):
     """Register a module when it connects"""
     module_id = data.get('module_id', 'unknown')
     module_type = data.get('module_type', 'unknown')
+    socket_id = request.sid
     
     if module_type in connected_modules:
         if module_id not in connected_modules[module_type]:
             connected_modules[module_type].append(module_id)
         print(f"[{datetime.now()}] Module registered: {module_id} ({module_type})")
+        
+        # Track display module sockets
+        if module_type == 'display':
+            display_module_sockets[socket_id] = module_id
         
         # Notify dashboard of new connection
         socketio.emit('module_connected', {
@@ -241,6 +275,15 @@ def handle_module_register(data):
             'module_type': module_type,
             'timestamp': datetime.now().isoformat()
         })
+        
+        # Emit specific event for Module 5 display connections
+        if module_type == 'display':
+            socketio.emit('module5_display_connected', {
+                'module_id': module_id,
+                'court_id': data.get('court_id', 'unknown'),
+                'timestamp': datetime.now().isoformat(),
+                'count': len(connected_modules['display'])
+            })
 
 # --- MODULE 1: CROWD DETECTION DATA ---
 @socketio.on('CrowdDataEvent')
@@ -249,6 +292,17 @@ def handle_crowd_data(data):
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
     socketio.emit('crowd_update', data)
+    
+    # Generate and send Module 5 data based on current Modules 1-3 data
+    court_id = data.get('court_id', 'basketball_a')
+    module5_data = generate_module5_from_modules(
+        court_id=court_id,
+        crowd_data=data,
+        env_data=current_data['environment'],
+        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+    )
+    socketio.emit('DisplayUpdate', module5_data)
+    print(f"[{datetime.now()}] Module 5 data generated from Module 1 data and sent to dashboard")
 
 @socketio.on('CrowdVideoFrameEvent')
 def handle_crowd_video(data):
@@ -263,6 +317,17 @@ def handle_environment_data(data):
     print(f"[{datetime.now()}] Received Environment Data: {data}")
     current_data['environment'] = data
     socketio.emit('environment_update', data)
+    
+    # Generate and send Module 5 data based on current Modules 1-3 data
+    court_id = data.get('court_id', 'basketball_a')
+    module5_data = generate_module5_from_modules(
+        court_id=court_id,
+        crowd_data=current_data['crowd'],
+        env_data=data,
+        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+    )
+    socketio.emit('DisplayUpdate', module5_data)
+    print(f"[{datetime.now()}] Module 5 data generated from Module 2 data and sent to dashboard")
 
 # --- MODULE 3: FEEDBACK DATA ---
 @socketio.on('FeedbackDataEvent')
@@ -274,6 +339,19 @@ def handle_feedback_data(data):
     if len(current_data['feedback']) > 50:
         current_data['feedback'].pop(0)
     socketio.emit('feedback_update', data)
+    
+    # Generate and send Module 5 data based on current Modules 1-3 data
+    # (Only update if we have crowd or environment data, otherwise feedback alone isn't enough)
+    if current_data['crowd'] or current_data['environment']:
+        court_id = data.get('court_id', 'basketball_a')
+        module5_data = generate_module5_from_modules(
+            court_id=court_id,
+            crowd_data=current_data['crowd'],
+            env_data=current_data['environment'],
+            feedback_data=current_data['feedback'] if current_data['feedback'] else None
+        )
+        socketio.emit('DisplayUpdate', module5_data)
+        print(f"[{datetime.now()}] Module 5 data generated from Module 3 data and sent to dashboard")
 
 # --- Legacy Events (for backward compatibility) ---
 @socketio.on('usage_data')
@@ -298,6 +376,167 @@ def deep_merge(base_dict, override_dict):
         else:
             result[key] = value
     return result
+
+# --- Generate Module 5 Data from Modules 1-3 ---
+def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feedback_data=None):
+    """Generate Module 5 display data based on actual data from Modules 1-3
+    
+    Args:
+        court_id: Court identifier (e.g., 'basketball_a')
+        crowd_data: Data from Module 1 (crowd detection)
+        env_data: Data from Module 2 (environment)
+        feedback_data: Latest feedback from Module 3 (optional)
+    """
+    # Extract values from Modules 1-3 data
+    people_count = 0
+    crowd_level = 'empty'
+    confidence = 0.85
+    if crowd_data and 'data' in crowd_data:
+        people_count = crowd_data['data'].get('people_count', 0)
+        crowd_level = crowd_data['data'].get('crowd_level', 'empty')
+        confidence = crowd_data['data'].get('confidence', 0.85)
+    
+    temp_c = 25
+    humidity_percent = 50
+    uv_index = 5
+    comfort_score = 3.5
+    voc_level = 'good'
+    warnings = []
+    if env_data and 'data' in env_data:
+        temp_c = env_data['data'].get('temperature_c', 25)
+        humidity_percent = env_data['data'].get('humidity_percent', 50)
+        uv_index = env_data['data'].get('uv_index', 5)
+        comfort_score = env_data['data'].get('comfort_score', 3.5)
+        voc_level = env_data['data'].get('voc_level', 'good')
+        warnings = env_data['data'].get('warnings', [])
+    
+    # Calculate estimated wait time based on crowd level
+    wait_times = {
+        'empty': 0,
+        'light': 5,
+        'normal': 10,
+        'busy': 20,
+        'full': 30
+    }
+    estimated_wait = wait_times.get(crowd_level, 10)
+    
+    # Get average rating from feedback (if available)
+    rating_avg = 4.0
+    if feedback_data and isinstance(feedback_data, list) and len(feedback_data) > 0:
+        # Get last few feedback entries
+        recent_feedback = feedback_data[-5:] if len(feedback_data) >= 5 else feedback_data
+        ratings = [f['data'].get('rating') for f in recent_feedback if f.get('data', {}).get('report_type') == 'rating' and f['data'].get('rating')]
+        if ratings:
+            rating_avg = round(sum(ratings) / len(ratings), 1)
+    
+    occupancy = min(1.0, people_count / 10.0)
+    current_hour = datetime.now().hour
+    
+    # Generate hourly pattern based on current occupancy
+    today_hourly = []
+    for hour in range(8, 22):  # 8 AM to 10 PM
+        if hour < current_hour:
+            # Past hours: use current occupancy as base with some variation
+            base_occupancy = occupancy * (0.7 + random.random() * 0.3)
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
+        elif hour == current_hour:
+            today_hourly.append({'hour': hour, 'occupancy': occupancy})
+        else:
+            # Future hours: estimate based on typical patterns
+            base_occupancy = occupancy * (0.6 + random.random() * 0.4)
+            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
+    
+    # Weekly pattern (use current occupancy as peak)
+    weekly_peak = occupancy * 0.9
+    week_same_time = [
+        {'day': 'Mon', 'occupancy': weekly_peak * 0.9},
+        {'day': 'Tue', 'occupancy': weekly_peak * 0.85},
+        {'day': 'Wed', 'occupancy': weekly_peak},
+        {'day': 'Thu', 'occupancy': weekly_peak * 0.95},
+        {'day': 'Fri', 'occupancy': weekly_peak * 1.0},
+        {'day': 'Sat', 'occupancy': weekly_peak * 0.75},
+        {'day': 'Sun', 'occupancy': weekly_peak * 0.5}
+    ]
+    
+    # Generate alternatives (fewer if current court is busy)
+    num_alternatives = 2 if occupancy < 0.7 else 3
+    alternatives = []
+    alt_names = ['Court B', 'Court C', 'Court D']
+    alt_statuses = ['light', 'normal', 'busy']
+    for i in range(min(num_alternatives, 3)):
+        # Alternative courts have lower occupancy
+        alt_occupancy = max(0.1, occupancy * (0.3 + i * 0.2))
+        alternatives.append({
+            'id': f'basketball_{chr(98+i)}',
+            'name': alt_names[i],
+            'distance_m': 200 + (i * 300),
+            'occupancy': alt_occupancy,
+            'people': max(1, int(people_count * alt_occupancy / occupancy)) if occupancy > 0 else i + 1,
+            'status': alt_statuses[i % len(alt_statuses)]
+        })
+    
+    # Build recommendations based on current state
+    best_times = []
+    avoid_times = []
+    next_slot = None
+    
+    if occupancy < 0.5:
+        best_times = ['Now', 'Next hour']
+        next_slot = 'Available now'
+    elif occupancy < 0.8:
+        best_times = ['Early morning', 'Evening']
+        next_slot = f'{current_hour + 1}:00' if current_hour < 21 else 'Tomorrow 8:00'
+    else:
+        best_times = ['Early morning (6-8 AM)', 'Late evening (8-10 PM)']
+        avoid_times = ['Peak hours (12-6 PM)']
+        next_slot = f'{current_hour + 2}:00' if current_hour < 20 else 'Tomorrow 8:00'
+    
+    # Build Module 5 data structure
+    module5_data = {
+        'court_id': court_id,
+        'timestamp': datetime.now().isoformat(),
+        'current': {
+            'occupancy': occupancy,
+            'people_count': people_count,
+            'crowd_level': crowd_level,
+            'estimated_wait_min': estimated_wait,
+            'confidence': confidence,
+            'last_update': 'Just now'
+        },
+        'weather': {
+            'temp_c': temp_c,
+            'humidity_percent': humidity_percent,
+            'uv_index': uv_index,
+            'voc_level': voc_level,
+            'comfort_score': comfort_score,
+            'warnings': warnings,
+            'recommendations': ['sunscreen', 'hydration'] if uv_index > 7 else ['hydration'] if temp_c > 30 else []
+        },
+        'patterns': {
+            'today_hourly': today_hourly,
+            'week_same_time': week_same_time
+        },
+        'recommendations': {
+            'best_times_today': best_times,
+            'avoid_times': avoid_times,
+            'next_available_slot': next_slot,
+            'nearby_alternatives': alternatives
+        },
+        'info': {
+            'court_name': 'Basketball Court A',
+            'type': 'outdoor',
+            'surface': 'Concrete',
+            'lighting_hours': '6AM-10PM',
+            'rating_avg': rating_avg,
+            'rating_count': 47,
+            'last_cleaned': 'Today',
+            'size': 'Full court',
+            'capacity': 10,
+            'facilities': ['Water', 'Seating', 'Restroom', 'Parking']
+        }
+    }
+    
+    return module5_data
 
 # --- Generate Module 5 Test Data ---
 def generate_module5_test_data(court_id, scenario='normal', custom_data=None):
@@ -515,18 +754,6 @@ def handle_send_test_data_module5(data):
     
     return {'status': 'success', 'scenario': test_scenario}
 
-# --- API Endpoint: Get Current Data ---
-@app.route('/api/current_data')
-def get_current_data():
-    """REST API endpoint to get current data from all modules"""
-    return json.dumps({
-        'crowd': current_data['crowd'],
-        'environment': current_data['environment'],
-        'feedback': current_data['feedback'][-10:],  # Last 10 feedback entries
-        'connected_modules': connected_modules,
-        'timestamp': datetime.now().isoformat()
-    }, indent=2)
-
 # --- Mock Mode Control Events ---
 @socketio.on('start_mock_data')
 def handle_start_mock(data=None):
@@ -574,6 +801,70 @@ def handle_stop_mock(data=None):
                 m for m in connected_modules[module_type] if not m.startswith('mock_module')
             ]
         
+        # Clear simulated data from current_data
+        if current_data.get('crowd') and current_data['crowd'].get('module_id', '').startswith('mock_module'):
+            current_data['crowd'] = None
+            socketio.emit('crowd_update', {'cleared': True})
+            print(f"[{datetime.now()}] Cleared mock crowd data")
+        
+        if current_data.get('environment') and current_data['environment'].get('module_id', '').startswith('mock_module'):
+            current_data['environment'] = None
+            socketio.emit('environment_update', {'cleared': True})
+            print(f"[{datetime.now()}] Cleared mock environment data")
+        
+        # Clear mock feedback entries
+        if current_data.get('feedback'):
+            current_data['feedback'] = [
+                f for f in current_data['feedback'] 
+                if not f.get('module_id', '').startswith('mock_module')
+            ]
+            if current_data['feedback']:
+                socketio.emit('feedback_update', current_data['feedback'][-1])
+            else:
+                socketio.emit('feedback_update', {'cleared': True})
+            print(f"[{datetime.now()}] Cleared mock feedback data")
+        
+        # Stop sending Module 5 data (send empty/cleared state)
+        # Generate empty Module 5 data to signal "disconnect"
+        empty_module5 = {
+            'court_id': 'basketball_a',
+            'timestamp': datetime.now().isoformat(),
+            'current': {
+                'occupancy': 0,
+                'people_count': 0,
+                'crowd_level': 'empty',
+                'estimated_wait_min': 0,
+                'confidence': 0,
+                'last_update': 'No data'
+            },
+            'weather': {
+                'temp_c': None,
+                'humidity_percent': None,
+                'uv_index': None,
+                'voc_level': 'unknown',
+                'comfort_score': None,
+                'warnings': []
+            },
+            'info': {
+                'court_name': 'Basketball Court A',
+                'type': 'outdoor',
+                'surface': 'Concrete',
+                'rating_avg': None,
+                'capacity': 10
+            },
+            'recommendations': {
+                'next_available_slot': 'N/A',
+                'nearby_alternatives': []
+            },
+            'patterns': {
+                'today_hourly': [],
+                'week_same_time': []
+            },
+            'disconnected': True
+        }
+        socketio.emit('DisplayUpdate', empty_module5)
+        print(f"[{datetime.now()}] Sent Module 5 disconnect signal")
+        
         return {'status': 'success', 'message': 'Mock mode stopped'}
     else:
         return {'status': 'info', 'message': 'Mock mode not active'}
@@ -595,6 +886,46 @@ def handle_update_mock_config(data):
         'active': mock_state['active']
     }}
 
+@socketio.on('send_mock_data_once')
+def handle_send_mock_data_once(data=None):
+    """Send mock data once for all 3 modules (triggered manually from dashboard)"""
+    scenario = data.get('scenario', 'normal') if data else mock_state.get('scenario', 'normal')
+    
+    print(f"[{datetime.now()}] Sending mock data once (scenario: {scenario})")
+    
+    # Generate mock data for all three modules
+    crowd_data = generate_mock_crowd_data(scenario)
+    env_data = generate_mock_environment_data(scenario)
+    feedback_data = generate_mock_feedback_data(scenario)
+    
+    # Store data first
+    current_data['crowd'] = crowd_data
+    current_data['environment'] = env_data
+    current_data['feedback'].append(feedback_data)
+    if len(current_data['feedback']) > 50:
+        current_data['feedback'].pop(0)
+    
+    # Emit update events directly to ensure they're broadcast
+    socketio.emit('crowd_update', crowd_data)
+    socketio.emit('environment_update', env_data)
+    socketio.emit('feedback_update', feedback_data)
+    
+    print(f"[{datetime.now()}] Emitted crowd_update, environment_update, feedback_update events")
+    
+    # Generate and send Module 5 data
+    court_id = 'basketball_a'
+    module5_data = generate_module5_from_modules(
+        court_id=court_id,
+        crowd_data=crowd_data,
+        env_data=env_data,
+        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+    )
+    socketio.emit('DisplayUpdate', module5_data)
+    
+    print(f"[{datetime.now()}] Mock data sent for all 3 modules and Module 5")
+    
+    return {'status': 'success', 'message': f'Mock data sent (scenario: {scenario})'}
+
 # --- Connection Events ---
 @socketio.on('connect')
 def test_connect():
@@ -607,10 +938,34 @@ def test_connect():
         'scenario': mock_state['scenario'],
         'update_interval': mock_state['update_interval']
     })
+    # Send current Module 5 display connection status
+    emit('module5_display_status', {
+        'connected': len(connected_modules['display']) > 0,
+        'count': len(connected_modules['display']),
+        'modules': connected_modules['display']
+    })
 
 @socketio.on('disconnect')
 def test_disconnect():
-    print(f'[{datetime.now()}] Client Disconnected: {request.sid}')
+    socket_id = request.sid
+    print(f'[{datetime.now()}] Client Disconnected: {socket_id}')
+    
+    # Check if this was a display module
+    if socket_id in display_module_sockets:
+        module_id = display_module_sockets[socket_id]
+        # Remove from connected modules
+        if module_id in connected_modules['display']:
+            connected_modules['display'].remove(module_id)
+        # Remove from socket tracking
+        del display_module_sockets[socket_id]
+        
+        # Emit disconnect event for Module 5
+        socketio.emit('module5_display_disconnected', {
+            'module_id': module_id,
+            'timestamp': datetime.now().isoformat(),
+            'count': len(connected_modules['display'])
+        })
+        print(f"[{datetime.now()}] Module 5 display disconnected: {module_id}")
 
 if __name__ == '__main__':
     import socket

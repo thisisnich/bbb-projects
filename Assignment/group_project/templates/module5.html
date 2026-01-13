@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Module 5 Test - Smart Sports Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <style>
+    :root{
+      /* Pure neutrals (Boldness & Clarity) */
+      --bg: #fafafa;
+      --card: #ffffff;
+      --text: #171717;
+      --muted: #737373;
+      --faint: #a3a3a3;
+      --border: rgba(0,0,0,0.08);
+      --borderSubtle: rgba(0,0,0,0.05);
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+
+      /* Accent (one) */
+      --accent: #2563eb; /* blue-600 */
+      --accentBg: rgba(37,99,235,0.08);
+
+      /* Semantic */
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #ea580c;
+
+      /* Grid */
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
+      --s4: 4px;
+      --s8: 8px;
+      --s12: 12px;
+      --s16: 16px;
+      --s24: 24px;
+      --s32: 32px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: var(--s24);
+      min-height: 100vh;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r12);
+      box-shadow: var(--shadow);
+      padding: var(--s24);
+      margin-bottom: var(--s24);
+    }
+
+    .cardHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding-bottom: var(--s16);
+      border-bottom: 1px solid var(--borderSubtle);
+      margin-bottom: var(--s16);
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .header {
+      margin-bottom: var(--s32);
+    }
+
+    .headerRow {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--s16);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s8);
+      padding: 6px 10px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--faint);
+    }
+
+    .dot.online { background: var(--success); }
+    .dot.offline { background: var(--danger); }
+
+    .btn {
+      padding: 10px 16px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      background: var(--bg);
+      border-color: var(--muted);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .btn.primary:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    .btn.danger {
+      background: var(--danger);
+      color: white;
+      border-color: var(--danger);
+    }
+
+    .btn.danger:hover {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btnRow {
+      display: flex;
+      gap: var(--s8);
+      flex-wrap: wrap;
+    }
+
+    .inputGroup {
+      margin-bottom: var(--s16);
+    }
+
+    .inputGroup label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: var(--s8);
+    }
+
+    .inputGroup input,
+    .inputGroup textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r8);
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--card);
+      color: var(--text);
+    }
+
+    .inputGroup input:focus,
+    .inputGroup textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accentBg);
+    }
+
+    .inputGroup textarea {
+      min-height: 200px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      resize: vertical;
+    }
+
+    .switchRow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--s12) 0;
+    }
+
+    .switchMeta {
+      flex: 1;
+    }
+
+    .switchMeta .l {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: var(--s4);
+    }
+
+    .switchMeta .d {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .toggle {
+      width: 44px;
+      height: 24px;
+      border-radius: 12px;
+      background: var(--faint);
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle.active {
+      background: var(--accent);
+    }
+
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: white;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.2s;
+    }
+
+    .toggle.active::after {
+      transform: translateX(20px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: var(--r6);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .badge.muted {
+      background: var(--bg);
+      color: var(--muted);
+    }
+
+    .badge.success {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--success);
+    }
+
+    .badge.danger {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+    }
+
+    .badge.warning {
+      background: rgba(234, 88, 12, 0.1);
+      color: var(--warning);
+    }
+
+    .statusMessage {
+      padding: var(--s12);
+      border-radius: var(--r8);
+      margin-top: var(--s16);
+      font-size: 14px;
+      display: none;
+    }
+
+    .statusMessage.show {
+      display: block;
+    }
+
+    .statusMessage.success {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(22, 163, 74, 0.2);
+    }
+
+    .statusMessage.error {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(220, 38, 38, 0.2);
+    }
+
+    .statusMessage.info {
+      background: var(--accentBg);
+      color: var(--accent);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+
+    .preview {
+      margin-top: var(--s16);
+      padding: var(--s16);
+      background: var(--bg);
+      border-radius: var(--r8);
+      border: 1px solid var(--borderSubtle);
+    }
+
+    .preview pre {
+      margin: 0;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: var(--text);
+    }
+
+    .previewHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--s12);
+    }
+
+    .previewHeader button {
+      font-size: 12px;
+      padding: 4px 8px;
+    }
+
+    .link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
+
+    .helpText {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: var(--s8);
+      line-height: 1.6;
+    }
+
+    .helpText code {
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: var(--r6);
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <div class="header">
+      <div class="headerRow">
+        <div class="brand">
+          <h1>Module 5 Test</h1>
+          <p class="subtitle">Send test data to Module 5 display clients</p>
+        </div>
+        <div class="pill">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">Connecting...</span>
+        </div>
+      </div>
+      <div style="margin-top: var(--s12);">
+        <a href="/" class="link">← Back to Dashboard</a>
+      </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="card">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Connection</p>
+          <p class="subtitle">Server connection status</p>
+        </div>
+      </div>
+      <div>
+        <div style="display: flex; align-items: center; gap: var(--s8);">
+          <span class="dot" id="conn-dot"></span>
+          <span id="conn-text">Disconnected</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode Toggle -->
+    <div class="card">
+      <div class="switchRow">
+        <div class="switchMeta">
+          <div class="l">Advanced Mode</div>
+          <div class="d">Enable JSON editor for custom data overrides</div>
+        </div>
+        <div class="toggle" id="mode-toggle" role="switch" aria-checked="false" tabindex="0"></div>
+      </div>
+    </div>
+
+    <!-- Simple Mode -->
+    <div class="card" id="simple-mode">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Send Test Data</p>
+          <p class="subtitle">Choose a scenario to send</p>
+        </div>
+      </div>
+
+      <div class="inputGroup">
+        <label for="court-id">Court ID</label>
+        <input type="text" id="court-id" value="basketball_a" placeholder="basketball_a">
+      </div>
+
+      <div style="margin-bottom: var(--s16);">
+        <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: var(--s8);">Scenario</label>
+        <div class="btnRow">
+          <button class="btn" id="btn-normal">Normal</button>
+          <button class="btn" id="btn-full">Full</button>
+          <button class="btn" id="btn-empty">Empty</button>
+          <button class="btn" id="btn-busy">Busy</button>
+        </div>
+      </div>
+
+      <button class="btn primary" id="btn-send" style="width: 100%;">Send Test Data</button>
+
+      <div class="statusMessage" id="status-msg"></div>
+    </div>
+
+    <!-- Advanced Mode -->
+    <div class="card" id="advanced-mode" style="display: none;">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Advanced: Custom Data</p>
+          <p class="subtitle">Override specific fields using JSON</p>
+        </div>
+      </div>
+
+      <div class="inputGroup">
+        <label for="court-id-adv">Court ID</label>
+        <input type="text" id="court-id-adv" value="basketball_a" placeholder="basketball_a">
+      </div>
+
+      <div class="inputGroup">
+        <label for="scenario-select">Base Scenario</label>
+        <select id="scenario-select" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r8); font-size: 14px; font-family: inherit; background: var(--card); color: var(--text);">
+          <option value="normal">Normal</option>
+          <option value="full">Full</option>
+          <option value="empty">Empty</option>
+          <option value="busy">Busy</option>
+        </select>
+      </div>
+
+      <div class="inputGroup">
+        <label for="custom-data">Custom Data Overrides (JSON)</label>
+        <textarea id="custom-data">{
+  "current.people_count": 8,
+  "current.crowd_level": "busy",
+  "current.estimated_wait_min": 15,
+  "current.confidence": 0.95,
+  "current.last_update": "Just now",
+  "weather.temp_c": 32,
+  "weather.humidity_percent": 65,
+  "weather.uv_index": 8,
+  "weather.voc_level": "moderate",
+  "weather.comfort_score": 3.2,
+  "weather.warnings": ["high_uv", "high_temperature"],
+  "weather.recommendations": ["sunscreen", "hydration"],
+  "recommendations.next_available_slot": "14:30",
+  "recommendations.best_times_today": ["06:00-08:00", "20:00-22:00"],
+  "recommendations.avoid_times": ["12:00-14:00"],
+  "info.court_name": "Basketball Court A",
+  "info.rating_avg": 4.5,
+  "info.rating_count": 50,
+  "info.capacity": 12,
+  "info.last_cleaned": "Yesterday",
+  "info.size": "Full court",
+  "info.facilities": ["Water", "Seating", "Restroom", "Parking", "Showers"]
+}</textarea>
+        <div class="helpText">
+          Use dot notation to override nested fields. You can comment out lines you don't want to override.
+          <br>• <code>"current.people_count": 8</code> - Set people count to 8
+          <br>• <code>"weather.temp_c": 35, "weather.uv_index": 10</code> - Override multiple weather fields
+          <br>• <code>"current": {"people_count": 8, "crowd_level": "busy"}</code> - Nested object format also works
+        </div>
+      </div>
+
+      <button class="btn primary" id="btn-send-adv" style="width: 100%;">Send Custom Data</button>
+
+      <div class="statusMessage" id="status-msg-adv"></div>
+    </div>
+
+    <!-- Preview -->
+    <div class="card" id="preview-card" style="display: none;">
+      <div class="previewHeader">
+        <div>
+          <p class="title">Last Sent Data</p>
+          <p class="subtitle">Preview of generated payload</p>
+        </div>
+        <button class="btn" id="btn-hide-preview">Hide</button>
+      </div>
+      <div class="preview">
+        <pre id="preview-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io({
+      autoConnect: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
+    let currentScenario = 'normal';
+    let lastSentData = null;
+    let isWebPageConnected = false;
+    let isModule5Connected = false;
+    let module5Count = 0;
+    let module5Modules = [];
+
+    // Update Module 5 display connection status
+    function updateModule5Status(connected, count, modules) {
+      isModule5Connected = connected;
+      module5Count = count || 0;
+      module5Modules = modules || [];
+      
+      if(connected && count > 0){
+        document.getElementById('status-dot').classList.add('online');
+        document.getElementById('status-dot').classList.remove('offline');
+        document.getElementById('status-text').textContent = `Connected (${count})`;
+        document.getElementById('conn-dot').classList.add('online');
+        document.getElementById('conn-dot').classList.remove('offline');
+        document.getElementById('conn-text').textContent = `${count} Module 5 display${count > 1 ? 's' : ''} connected`;
+      } else {
+        document.getElementById('status-dot').classList.remove('online');
+        document.getElementById('status-dot').classList.add('offline');
+        document.getElementById('status-text').textContent = 'Disconnected';
+        document.getElementById('conn-dot').classList.remove('online');
+        document.getElementById('conn-dot').classList.add('offline');
+        document.getElementById('conn-text').textContent = 'No Module 5 displays connected';
+      }
+    }
+
+    // Update web page connection status (separate from Module 5)
+    function updateWebPageStatus(connected) {
+      isWebPageConnected = connected;
+      // Web page connection status is shown in status messages, not the main status
+    }
+
+    // Set initial status as disconnected
+    updateModule5Status(false, 0, []);
+
+    // Web page connection status
+    socket.on('connect', () => {
+      isWebPageConnected = true;
+      updateWebPageStatus(true);
+    });
+
+    socket.on('disconnect', (reason) => {
+      isWebPageConnected = false;
+      updateWebPageStatus(false);
+      updateModule5Status(false, 0, []);
+      if(reason === 'io server disconnect') {
+        showStatus('error', 'Disconnected by server', 'status-msg');
+      } else {
+        showStatus('error', 'Disconnected from server', 'status-msg');
+      }
+    });
+
+    socket.on('connect_error', (error) => {
+      isWebPageConnected = false;
+      updateWebPageStatus(false);
+      updateModule5Status(false, 0, []);
+      showStatus('error', 'Connection error: ' + (error.message || 'Unable to connect'), 'status-msg');
+    });
+
+    // Module 5 display connection events
+    socket.on('module5_display_status', (data) => {
+      updateModule5Status(data.connected, data.count, data.modules || []);
+    });
+
+    socket.on('module5_display_connected', (data) => {
+      updateModule5Status(true, data.count, [data.module_id]);
+      showStatus('success', `Module 5 display connected: ${data.module_id}`, 'status-msg');
+    });
+
+    socket.on('module5_display_disconnected', (data) => {
+      updateModule5Status(data.count > 0, data.count, []);
+      if(data.count === 0) {
+        showStatus('error', 'Module 5 display disconnected', 'status-msg');
+      } else {
+        showStatus('info', `Module 5 display disconnected (${data.count} still connected)`, 'status-msg');
+      }
+    });
+
+    // Test data sent confirmation
+    socket.on('test_data_sent', (data) => {
+      showStatus('success', `Test data sent successfully (scenario: ${data.scenario})`, 'status-msg');
+      if(document.getElementById('advanced-mode').style.display !== 'none'){
+        showStatus('success', `Test data sent successfully (scenario: ${data.scenario})`, 'status-msg-adv');
+      }
+    });
+
+    // DisplayUpdate received (preview)
+    socket.on('DisplayUpdate', (data) => {
+      lastSentData = data;
+      showPreview(data);
+    });
+
+    // Mode toggle
+    const modeToggle = document.getElementById('mode-toggle');
+    modeToggle.addEventListener('click', () => {
+      const isActive = modeToggle.classList.contains('active');
+      if(isActive){
+        modeToggle.classList.remove('active');
+        document.getElementById('simple-mode').style.display = 'block';
+        document.getElementById('advanced-mode').style.display = 'none';
+      } else {
+        modeToggle.classList.add('active');
+        document.getElementById('simple-mode').style.display = 'none';
+        document.getElementById('advanced-mode').style.display = 'block';
+      }
+    });
+
+    modeToggle.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        modeToggle.click();
+      }
+    });
+
+    // Simple mode: Scenario buttons
+    ['normal', 'full', 'empty', 'busy'].forEach(scenario => {
+      document.getElementById(`btn-${scenario}`).addEventListener('click', () => {
+        currentScenario = scenario;
+        // Update button states
+        document.querySelectorAll('#simple-mode .btnRow .btn').forEach(btn => {
+          btn.classList.remove('primary');
+        });
+        document.getElementById(`btn-${scenario}`).classList.add('primary');
+      });
+    });
+
+    // Simple mode: Send button
+    document.getElementById('btn-send').addEventListener('click', () => {
+      const courtId = document.getElementById('court-id').value.trim() || 'basketball_a';
+      sendTestData(courtId, currentScenario, null);
+    });
+
+    // Advanced mode: Send button
+    document.getElementById('btn-send-adv').addEventListener('click', () => {
+      const courtId = document.getElementById('court-id-adv').value.trim() || 'basketball_a';
+      const scenario = document.getElementById('scenario-select').value;
+      let customDataText = document.getElementById('custom-data').value.trim();
+      
+      // Remove single-line comments (// ...)
+      customDataText = customDataText.replace(/\/\/.*$/gm, '');
+      
+      let customData = null;
+      if(customDataText){
+        try {
+          customData = JSON.parse(customDataText);
+        } catch(e){
+          showStatus('error', `Invalid JSON: ${e.message}`, 'status-msg-adv');
+          return;
+        }
+      }
+      
+      sendTestData(courtId, scenario, customData);
+    });
+
+    // Hide preview
+    document.getElementById('btn-hide-preview').addEventListener('click', () => {
+      document.getElementById('preview-card').style.display = 'none';
+    });
+
+    function sendTestData(courtId, scenario, customData){
+      const payload = {
+        court_id: courtId,
+        scenario: scenario
+      };
+      
+      if(customData){
+        payload.custom_data = customData;
+      }
+
+      showStatus('info', 'Sending test data...', 'status-msg');
+      if(document.getElementById('advanced-mode').style.display !== 'none'){
+        showStatus('info', 'Sending test data...', 'status-msg-adv');
+      }
+
+      socket.emit('send_test_data_module5', payload, (response) => {
+        if(response && response.status === 'success'){
+          showStatus('success', `Test data sent: ${scenario} scenario`, 'status-msg');
+          if(document.getElementById('advanced-mode').style.display !== 'none'){
+            showStatus('success', `Test data sent: ${scenario} scenario`, 'status-msg-adv');
+          }
+        } else {
+          showStatus('error', 'Failed to send test data', 'status-msg');
+          if(document.getElementById('advanced-mode').style.display !== 'none'){
+            showStatus('error', 'Failed to send test data', 'status-msg-adv');
+          }
+        }
+      });
+    }
+
+    function showStatus(type, message, targetId){
+      const el = document.getElementById(targetId);
+      el.className = `statusMessage ${type} show`;
+      el.textContent = message;
+      setTimeout(() => {
+        el.classList.remove('show');
+      }, 5000);
+    }
+
+    function showPreview(data){
+      document.getElementById('preview-card').style.display = 'block';
+      document.getElementById('preview-content').textContent = JSON.stringify(data, null, 2);
+    }
+
+    // Initialize: Set normal button as active
+    document.getElementById('btn-normal').classList.add('primary');
+  </script>
+</body>
+</html>

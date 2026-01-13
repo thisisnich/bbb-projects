@@ -609,6 +609,7 @@
           <div class="row"><span>People</span><span class="val mono" id="m5-people">—</span></div>
           <div class="row"><span>Estimated wait</span><span class="val mono" id="m5-wait">—</span></div>
           <div class="row"><span>Confidence</span><span class="val mono" id="m5-confidence">—</span></div>
+          <div class="row"><span>Last update</span><span class="val mono" id="m5-last-update">—</span></div>
         </div>
       </div>
 
@@ -624,7 +625,9 @@
           <div class="row"><span>Humidity</span><span class="val mono" id="m5-humidity">—</span></div>
           <div class="row"><span>UV</span><span class="val mono" id="m5-uv">—</span></div>
           <div class="row"><span>Comfort</span><span class="val mono" id="m5-comfort">—</span></div>
+          <div class="row"><span>Air quality</span><span class="val" id="m5-voc">—</span></div>
         </div>
+        <div id="m5-warnings" style="margin-top: var(--s12); display: none;"></div>
       </div>
 
       <div style="height: var(--s16);"></div>
@@ -635,9 +638,24 @@
           <span class="badge muted">Info</span>
         </div>
         <div class="rows">
+          <div class="row"><span>Name</span><span class="val" id="m5-court-name">—</span></div>
           <div class="row"><span>Rating</span><span class="val mono" id="m5-rating">—</span></div>
+          <div class="row"><span>Capacity</span><span class="val mono" id="m5-capacity">—</span></div>
           <div class="row"><span>Last cleaned</span><span class="val mono" id="m5-cleaned">—</span></div>
           <div class="row"><span>Size</span><span class="val" id="m5-size">—</span></div>
+        </div>
+      </div>
+
+      <div style="height: var(--s16);"></div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="cardHeader" style="margin-bottom: var(--s12); padding-bottom: var(--s12);">
+          <p class="title">Recommendations</p>
+          <span class="badge muted">Suggestions</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>Next available</span><span class="val mono" id="m5-next-slot">—</span></div>
+          <div class="row"><span>Alternatives</span><span class="val mono" id="m5-alternatives">—</span></div>
         </div>
       </div>
     </div>
@@ -689,20 +707,10 @@
       <div class="card">
         <div class="cardHeader">
           <div>
-            <p class="title">Module 5 Control</p>
-            <p class="subtitle">Send scenarios / mock modules</p>
+            <p class="title">Mock Mode</p>
+            <p class="subtitle">Simulate Modules 1–3 data</p>
           </div>
-          <span class="badge muted mono" id="control-court">basketball_a</span>
         </div>
-
-        <div class="btnRow">
-          <button class="btn primary" id="btn-normal">Normal</button>
-          <button class="btn danger" id="btn-full">Full</button>
-          <button class="btn" id="btn-empty">Empty</button>
-          <button class="btn" id="btn-busy">Busy</button>
-        </div>
-
-        <div style="height: var(--s16);"></div>
 
         <div class="switchRow">
           <div class="switchMeta">
@@ -721,13 +729,9 @@
             <p class="subtitle" style="margin-bottom: var(--s8);">Update speed</p>
             <div class="select" id="sel-speed"></div>
           </div>
-          <div class="switchRow">
-            <div class="switchMeta">
-              <div class="l">Auto-cycle</div>
-              <div class="d">Rotates scenarios</div>
-            </div>
-            <div class="toggle" id="cycle-toggle" role="switch" aria-checked="false" tabindex="0"></div>
-          </div>
+          <button class="btn" id="btn-send-mock" style="width: 100%; margin-top: var(--s8);">
+            Send Mock Data
+          </button>
         </div>
 
         <div style="height: var(--s12);"></div>
@@ -810,8 +814,8 @@
       mockActive: false,
       mockScenario: "normal",
       mockInterval: 30,
-      autoCycle: false,
-      autoCycleTimer: null,
+      pollInterval: null,
+      lastDataHash: null,
       charts: { hourly: null, weekly: null },
       health: {
         m1: { lastSeen: 0, source: null, mode: "idle" }, // idle|active|mock
@@ -892,41 +896,128 @@
     }
 
     function updateModule5Preview(data){
-      if(!data) return;
-      state.latestModule5 = data;
-      bumpMsg();
+      try {
+        if(!data) {
+          console.warn("updateModule5Preview called with no data");
+          return;
+        }
+        // Check if this is a disconnect signal
+        if(data.disconnected) {
+          console.log("Module 5 disconnect signal received");
+          // Clear Module 5 preview
+          document.getElementById("kpi-m5").textContent = "Waiting";
+          setDot("dot-m5", "offline");
+          document.getElementById("dbg-m5").textContent = "—";
+          
+          // Clear all Module 5 fields
+          const clearField = (id, value = "—") => {
+            const el = document.getElementById(id);
+            if(el) el.textContent = value;
+          };
+          
+          clearField("m5-court", "—");
+          clearField("m5-people", "—");
+          clearField("m5-wait", "—");
+          clearField("m5-confidence", "—");
+          clearField("m5-last-update", "—");
+          clearField("m5-temp", "—");
+          clearField("m5-humidity", "—");
+          clearField("m5-uv", "—");
+          clearField("m5-comfort", "—");
+          clearField("m5-voc", "—");
+          clearField("m5-court-name", "—");
+          clearField("m5-rating", "—");
+          clearField("m5-capacity", "—");
+          clearField("m5-next-slot", "—");
+          clearField("m5-alternatives", "—");
+          
+          // Clear gauge
+          updateGauge(0);
+          setLevel("empty");
+          
+          // Clear warnings
+          const warningsEl = document.getElementById("m5-warnings");
+          if(warningsEl) warningsEl.style.display = "none";
+          
+          state.health.m5.mode = "idle";
+          state.health.m5.lastSeen = 0;
+          state.latestModule5 = null;
+          return;
+        }
+        
+        console.log("Updating Module 5 preview with data:", data);
+        state.latestModule5 = data;
+        bumpMsg();
 
-      // NOTE: Dashboard receiving DisplayUpdate does NOT mean a physical Module 5 client is connected.
-      // Treat this as "Active (broadcast/data)" only.
-      state.health.m5.lastSeen = Date.now();
-      state.health.m5.source = "DisplayUpdate";
-      state.health.m5.mode = "active";
-      document.getElementById("kpi-m5").textContent = "Active";
-      setDot("dot-m5", "online");
-      document.getElementById("dbg-m5").textContent = "data";
+        // NOTE: Dashboard receiving DisplayUpdate does NOT mean a physical Module 5 client is connected.
+        // Treat this as "Active (broadcast/data)" only.
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.source = "DisplayUpdate";
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = "data";
 
-      document.getElementById("m5-court").textContent = data.court_id || courtId;
-      document.getElementById("control-court").textContent = data.court_id || courtId;
+        document.getElementById("m5-court").textContent = data.court_id || courtId;
 
-      const current = data.current || {};
-      const weather = data.weather || {};
-      const info = data.info || {};
+        const current = data.current || {};
+        const weather = data.weather || {};
+        const info = data.info || {};
+        const recommendations = data.recommendations || {};
 
-      updateGauge(current.occupancy);
-      setLevel(current.crowd_level);
+        if(current.occupancy != null) updateGauge(current.occupancy);
+        if(current.crowd_level) setLevel(current.crowd_level);
 
+      // Current section
       document.getElementById("m5-people").textContent = String(current.people_count ?? "—");
       document.getElementById("m5-wait").textContent = current.estimated_wait_min != null ? `${current.estimated_wait_min} min` : "—";
       document.getElementById("m5-confidence").textContent = current.confidence != null ? `${Math.round(Number(current.confidence) * 100)}%` : "—";
+      document.getElementById("m5-last-update").textContent = current.last_update || "—";
 
+      // Weather section
       document.getElementById("m5-temp").textContent = weather.temp_c != null ? `${weather.temp_c}°C` : "—";
       document.getElementById("m5-humidity").textContent = weather.humidity_percent != null ? `${weather.humidity_percent}%` : "—";
       document.getElementById("m5-uv").textContent = weather.uv_index != null ? String(weather.uv_index) : "—";
       document.getElementById("m5-comfort").textContent = weather.comfort_score != null ? `${weather.comfort_score}/5` : "—";
+      
+      // VOC level with badge styling
+      const vocEl = document.getElementById("m5-voc");
+      const vocLevel = weather.voc_level || "";
+      if(vocLevel){
+        vocEl.textContent = vocLevel.charAt(0).toUpperCase() + vocLevel.slice(1);
+        vocEl.className = "val";
+        if(vocLevel === "good") vocEl.classList.add("badge", "badgeSuccess");
+        else if(vocLevel === "moderate") vocEl.classList.add("badge", "badgeWarning");
+        else if(vocLevel === "poor") vocEl.classList.add("badge", "badgeDanger");
+      } else {
+        vocEl.textContent = "—";
+        vocEl.className = "val mono";
+      }
 
+      // Warnings display
+      const warningsEl = document.getElementById("m5-warnings");
+      if(weather.warnings && Array.isArray(weather.warnings) && weather.warnings.length > 0){
+        warningsEl.style.display = "block";
+        warningsEl.innerHTML = weather.warnings.map(w => `<span class="badge badgeWarning" style="margin-right: var(--s8); margin-bottom: var(--s8);">${w}</span>`).join("");
+      } else {
+        warningsEl.style.display = "none";
+      }
+
+      // Court info section
+      document.getElementById("m5-court-name").textContent = info.court_name || data.court_id || "—";
       document.getElementById("m5-rating").textContent = info.rating_avg != null ? `${Number(info.rating_avg).toFixed(1)}/5` : "—";
+      document.getElementById("m5-capacity").textContent = info.capacity != null ? `${info.capacity} people` : "—";
       document.getElementById("m5-cleaned").textContent = info.last_cleaned || "—";
       document.getElementById("m5-size").textContent = info.size || "—";
+
+      // Recommendations section
+      document.getElementById("m5-next-slot").textContent = recommendations.next_available_slot || "—";
+      const alternatives = recommendations.nearby_alternatives || [];
+      if(alternatives.length > 0){
+        document.getElementById("m5-alternatives").textContent = `${alternatives.length} available`;
+      } else {
+        document.getElementById("m5-alternatives").textContent = "None";
+      }
 
       // payload inspector
       if(document.getElementById("inspector").style.display !== "none"){
@@ -934,7 +1025,11 @@
       }
 
       // charts
-      updateChartsFromModule5(data);
+      if(data.patterns) updateChartsFromModule5(data);
+      } catch(error) {
+        console.error("Error updating Module 5 preview:", error, data);
+        log(`Error updating Module 5 preview: ${error.message}`);
+      }
     }
 
     function metricTile(label, value, mono){
@@ -977,6 +1072,10 @@
     }
 
     function renderCrowd(data){
+      if(!data) {
+        console.warn("renderCrowd called with no data");
+        return;
+      }
       bumpMsg();
       const d = (data && data.data) ? data.data : {};
       const src = data && data.module_id ? data.module_id : null;
@@ -993,12 +1092,20 @@
         metricTile("Proximity", d.proximity_triggered ? "Yes" : "No", false)
       ].join("");
       const grid = document.getElementById("m1-grid");
-      grid.innerHTML = html;
-      grid.classList.add("flash");
-      setTimeout(()=>grid.classList.remove("flash"), 260);
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m1-grid element not found");
+      }
     }
 
     function renderEnvironment(data){
+      if(!data) {
+        console.warn("renderEnvironment called with no data");
+        return;
+      }
       bumpMsg();
       const d = (data && data.data) ? data.data : {};
       const src = data && data.module_id ? data.module_id : null;
@@ -1014,12 +1121,20 @@
         metricTile("VOC", (d.voc_level || "—").toUpperCase(), false)
       ].join("");
       const grid = document.getElementById("m2-grid");
-      grid.innerHTML = html;
-      grid.classList.add("flash");
-      setTimeout(()=>grid.classList.remove("flash"), 260);
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m2-grid element not found");
+      }
     }
 
     function renderFeedback(data){
+      if(!data) {
+        console.warn("renderFeedback called with no data");
+        return;
+      }
       bumpMsg();
       const d = (data && data.data) ? data.data : {};
       const src = data && data.module_id ? data.module_id : null;
@@ -1044,9 +1159,13 @@
         html = metricTile("Feedback", "—", false);
       }
       const grid = document.getElementById("m3-grid");
-      grid.innerHTML = html;
-      grid.classList.add("flash");
-      setTimeout(()=>grid.classList.remove("flash"), 260);
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m3-grid element not found");
+      }
     }
 
     // Chart.js: create once, update data only. Fixed-size parent prevents infinite resize loops.
@@ -1161,18 +1280,6 @@
       setTimeout(()=>{ el.style.display = "none"; }, 2200);
     }
 
-    function sendTestData(scenario){
-      showControlStatus("Sending…");
-      socket.emit("send_test_data_module5", { court_id: courtId, scenario }, (resp) => {
-        if(resp && resp.status === "success"){
-          showControlStatus(`Sent: ${scenario}`);
-          log(`Test data sent (${scenario})`);
-        } else {
-          showControlStatus("Send failed");
-          log("Failed to send test data");
-        }
-      });
-    }
 
     function startMock(){
       socket.emit("start_mock_data", { scenario: state.mockScenario, update_interval: state.mockInterval }, () => {});
@@ -1181,6 +1288,36 @@
     function stopMock(){
       socket.emit("stop_mock_data", {}, () => {});
       log("Mock stopped");
+      
+      // Clear simulated data from UI
+      // Clear Module 1 (Crowd)
+      const m1Grid = document.getElementById("m1-grid");
+      if(m1Grid) {
+        m1Grid.innerHTML = "";
+        state.health.m1.mode = "idle";
+        state.health.m1.lastSeen = 0;
+        setModuleStatus("m1-status", "idle");
+      }
+      
+      // Clear Module 2 (Environment)
+      const m2Grid = document.getElementById("m2-grid");
+      if(m2Grid) {
+        m2Grid.innerHTML = "";
+        state.health.m2.mode = "idle";
+        state.health.m2.lastSeen = 0;
+        setModuleStatus("m2-status", "idle");
+      }
+      
+      // Clear Module 3 (Feedback)
+      const m3Grid = document.getElementById("m3-grid");
+      if(m3Grid) {
+        m3Grid.innerHTML = "";
+        state.health.m3.mode = "idle";
+        state.health.m3.lastSeen = 0;
+        setModuleStatus("m3-status", "idle");
+      }
+      
+      // Module 5 will be cleared by the DisplayUpdate event with disconnected flag
     }
     function updateMockConfig(){
       if(!state.mockActive) return;
@@ -1188,35 +1325,96 @@
       log(`Mock config updated (${state.mockScenario}, ${state.mockInterval}s)`);
     }
 
-    function startAutoCycle(){
-      if(state.autoCycleTimer) clearInterval(state.autoCycleTimer);
-      const order = ["empty","light","normal","busy","full"];
-      let i = Math.max(0, order.indexOf(state.mockScenario));
-      state.autoCycleTimer = setInterval(() => {
-        i = (i + 1) % order.length;
-        state.mockScenario = order[i];
-        window.__scenarioSelect?.setValue(state.mockScenario);
-        updateMockConfig();
-      }, 45000);
-      log("Auto-cycle enabled");
+    function sendMockDataOnce(){
+      if(!state.mockActive) {
+        log("Mock mode must be active to send data");
+        return;
+      }
+      log(`Sending mock data (scenario: ${state.mockScenario})...`);
+      socket.emit("send_mock_data_once", { scenario: state.mockScenario }, (response) => {
+        if(response && response.status === 'success'){
+          log(`✓ Mock data sent: ${response.message}`);
+          console.log("Mock data send response:", response);
+        } else {
+          log("✗ Failed to send mock data");
+          console.error("Mock data send failed:", response);
+        }
+      });
     }
-    function stopAutoCycle(){
-      if(state.autoCycleTimer) clearInterval(state.autoCycleTimer);
-      state.autoCycleTimer = null;
-      log("Auto-cycle disabled");
+
+    function startPolling(){
+      if(state.pollInterval) clearInterval(state.pollInterval);
+      
+      const poll = async () => {
+        try {
+          const response = await fetch('/api/current_data');
+          if(!response.ok) {
+            console.warn("Polling failed:", response.status);
+            return;
+          }
+          const data = await response.json();
+          
+          // Create a hash to detect changes
+          const dataHash = JSON.stringify({
+            crowd: data.crowd,
+            environment: data.environment,
+            feedback: data.feedback,
+            module5: data.module5
+          });
+          
+          // Only update if data has changed
+          if(dataHash !== state.lastDataHash) {
+            state.lastDataHash = dataHash;
+            console.log("Data changed, updating UI...");
+            
+            // Update UI with new data
+            if(data.crowd) {
+              renderCrowd(data.crowd);
+            }
+            if(data.environment) {
+              renderEnvironment(data.environment);
+            }
+            if(data.feedback) {
+              renderFeedback(data.feedback);
+            }
+            // Always try to update Module 5 if data exists
+            if(data.module5) {
+              console.log("Updating Module 5 preview from polling:", data.module5);
+              try {
+                updateModule5Preview(data.module5);
+                console.log("✓ Module 5 preview updated successfully");
+              } catch(error) {
+                console.error("Error updating Module 5 preview:", error);
+              }
+            } else {
+              console.log("No Module 5 data available (need crowd or environment data)");
+            }
+          }
+        } catch(error) {
+          console.error("Polling error:", error);
+        }
+      };
+      
+      // Poll immediately, then every 2 seconds
+      poll();
+      state.pollInterval = setInterval(poll, 2000);
+      log("Polling started (every 2 seconds)");
+    }
+
+    function stopPolling(){
+      if(state.pollInterval) {
+        clearInterval(state.pollInterval);
+        state.pollInterval = null;
+        log("Polling stopped");
+      }
     }
 
     // Wire UI
     function wireUi(){
       document.getElementById("server-origin").textContent = window.location.origin;
 
-      document.getElementById("btn-normal").addEventListener("click", () => sendTestData("normal"));
-      document.getElementById("btn-full").addEventListener("click", () => sendTestData("full"));
-      document.getElementById("btn-empty").addEventListener("click", () => sendTestData("empty"));
-      document.getElementById("btn-busy").addEventListener("click", () => sendTestData("busy"));
-
       const mockToggle = document.getElementById("mock-toggle");
-      const cycleToggle = document.getElementById("cycle-toggle");
+      const sendMockBtn = document.getElementById("btn-send-mock");
 
       function toggleClick(el, fn){
         el.addEventListener("click", fn);
@@ -1227,23 +1425,20 @@
         state.mockActive = !state.mockActive;
         setToggle("mock-toggle", state.mockActive);
         document.getElementById("mock-config").style.display = state.mockActive ? "flex" : "none";
+        sendMockBtn.disabled = !state.mockActive;
         if(state.mockActive){
           startMock();
         } else {
           stopMock();
-          state.autoCycle = false;
-          setToggle("cycle-toggle", false);
-          stopAutoCycle();
         }
       });
 
-      toggleClick(cycleToggle, () => {
-        if(!state.mockActive) return;
-        state.autoCycle = !state.autoCycle;
-        setToggle("cycle-toggle", state.autoCycle);
-        if(state.autoCycle) startAutoCycle();
-        else stopAutoCycle();
+      sendMockBtn.addEventListener("click", () => {
+        sendMockDataOnce();
       });
+      
+      // Initially disable send button if mock is not active
+      sendMockBtn.disabled = !state.mockActive;
 
       document.getElementById("btn-inspect").addEventListener("click", () => {
         const pane = document.getElementById("inspector");
@@ -1311,25 +1506,86 @@
         document.getElementById("mock-config").style.display = "flex";
         window.__scenarioSelect?.setValue(state.mockScenario);
         window.__speedSelect?.setValue(String(state.mockInterval));
+        document.getElementById("btn-send-mock").disabled = false;
         log("Mock mode is active (server)");
+      } else {
+        document.getElementById("btn-send-mock").disabled = true;
       }
     });
 
     socket.on("DisplayUpdate", (data) => {
+      console.log("DisplayUpdate event received:", data);
       log("Module 5 display update received");
-      updateModule5Preview(data);
+      if(data){
+        updateModule5Preview(data);
+      } else {
+        console.warn("DisplayUpdate received but data is null/undefined");
+      }
     });
     socket.on("crowd_update", (data) => {
+      console.log("Crowd update event received:", data);
       log("Crowd update received");
-      renderCrowd(data);
+      if(data) {
+        // Check if this is a clear signal
+        if(data.cleared) {
+          const m1Grid = document.getElementById("m1-grid");
+          if(m1Grid) m1Grid.innerHTML = "";
+          state.health.m1.mode = "idle";
+          state.health.m1.lastSeen = 0;
+          setModuleStatus("m1-status", "idle");
+          log("Crowd data cleared");
+          return;
+        }
+        try {
+          renderCrowd(data);
+          console.log("✓ Crowd data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering crowd data:", error);
+          log(`Error rendering crowd: ${error.message}`);
+        }
+      } else {
+        console.warn("Crowd update received but data is null/undefined");
+      }
     });
     socket.on("environment_update", (data) => {
+      console.log("Environment update event received:", data);
       log("Environment update received");
-      renderEnvironment(data);
+      if(data) {
+        // Check if this is a clear signal
+        if(data.cleared) {
+          const m2Grid = document.getElementById("m2-grid");
+          if(m2Grid) m2Grid.innerHTML = "";
+          state.health.m2.mode = "idle";
+          state.health.m2.lastSeen = 0;
+          setModuleStatus("m2-status", "idle");
+          log("Environment data cleared");
+          return;
+        }
+        try {
+          renderEnvironment(data);
+          console.log("✓ Environment data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering environment data:", error);
+          log(`Error rendering environment: ${error.message}`);
+        }
+      } else {
+        console.warn("Environment update received but data is null/undefined");
+      }
     });
     socket.on("feedback_update", (data) => {
+      console.log("Feedback update event received:", data);
       log("Feedback update received");
-      renderFeedback(data);
+      if(data) {
+        try {
+          renderFeedback(data);
+          console.log("✓ Feedback data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering feedback data:", error);
+          log(`Error rendering feedback: ${error.message}`);
+        }
+      } else {
+        console.warn("Feedback update received but data is null/undefined");
+      }
     });
 
     // Boot
@@ -1366,6 +1622,9 @@
 
       updateKpis();
       log("Dashboard ready");
+      
+      // Start polling for data updates every 2 seconds
+      startPolling();
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
       setModuleStatus("m1-status", "idle");
