@@ -428,9 +428,10 @@ def index():
 @app.route('/module5')
 def module5_test():
     return render_template('module5.html')
-@app.route('/module1')
-def module5_test():
-    return render_template('module1.html')
+
+@app.route('/module3')
+def module1_test():
+    return render_template('module3.html')
 
 @app.route('/api/analyze_image', methods=['POST'])
 def analyze_image():
