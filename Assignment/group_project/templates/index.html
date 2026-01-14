@@ -535,6 +535,7 @@
     /* Tiny motion */
     @keyframes flash { 0%,100%{ background: transparent; } 50%{ background: rgba(37,99,235,0.06);} }
     .flash{ animation: flash 240ms ease; }
+    @keyframes pulse { 0%,100%{ opacity: 1; } 50%{ opacity: 0.5; } }
   </style>
 </head>
 <body>
@@ -670,6 +671,33 @@
           </div>
           <span class="badge muted" id="m1-status">Offline</span>
         </div>
+        
+        <!-- AI Image Analysis Section -->
+        <div style="margin-bottom: var(--s16); padding: var(--s16); background: #fff; border-radius: var(--r12); border: 1px solid var(--borderSubtle);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
+            <div style="font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.01em;">AI Image Analysis</div>
+          </div>
+          <div style="display: flex; gap: var(--s8); align-items: center; flex-wrap: wrap;">
+            <input type="file" id="ai-image-input" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+            <button class="btn primary" onclick="document.getElementById('ai-image-input').click()">
+              Upload Image
+            </button>
+            <button class="btn" id="ai-analyze-btn" onclick="analyzeImage()" disabled style="opacity: 0.5; cursor: not-allowed;">
+              Analyze
+            </button>
+            <span id="ai-image-name" style="font-size: 13px; color: var(--muted); margin-left: var(--s4);"></span>
+          </div>
+          <div id="ai-image-preview" style="margin-top: var(--s12); display: none;">
+            <img id="ai-preview-img" src="" alt="Preview" style="max-width: 100%; max-height: 300px; border-radius: var(--r8); border: 1px solid var(--borderSubtle); object-fit: contain;">
+          </div>
+          <div id="ai-analysis-result" style="margin-top: var(--s16); display: none; padding: var(--s12); background: #fff; border-radius: var(--r8); border: 1px solid var(--borderSubtle);">
+            <!-- Results will be displayed here -->
+          </div>
+        </div>
+        
+        <div id="m1-image-container" style="margin-bottom: 15px; display: none;">
+          <img id="m1-image" src="" alt="Video Feed" style="width: 100%; max-width: 640px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+        </div>
         <div id="m1-grid" class="grid">
           <div class="emptyState">Waiting for crowd data…</div>
         </div>
@@ -694,7 +722,30 @@
             <p class="title">Feedback (Module 3)</p>
             <p class="subtitle">Latest entry</p>
           </div>
-          <span class="badge muted" id="m3-status">Offline</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="m3-kiosk-status" style="font-size: 0.75em; padding: 4px 8px; border-radius: 4px; background: #e5e7eb; color: #6b7280;">
+              <span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; margin-right: 5px;"></span>
+              Idle
+            </span>
+            <span class="badge muted" id="m3-status">Offline</span>
+          </div>
+        </div>
+        <div id="m3-stats" style="margin-bottom: 15px; display: none;">
+          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
+                <div id="m3-average" style="font-size: 1.8em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Total Ratings</div>
+                <div id="m3-total" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+            </div>
+            <div id="m3-chart" style="margin-top: 15px;">
+              <!-- Rating distribution chart will be rendered here -->
+            </div>
+          </div>
         </div>
         <div id="m3-grid" class="grid">
           <div class="emptyState">Waiting for feedback…</div>
@@ -1088,8 +1139,7 @@
         metricTile("Level", (d.crowd_level || "—").toUpperCase(), false),
         metricTile("Confidence", d.confidence != null ? `${Math.round(Number(d.confidence) * 100)}%` : "—", true),
         metricTile("Noise", d.noise_db != null ? `${d.noise_db} dB` : "—", true),
-        metricTile("Motion", d.motion_detected ? "Yes" : "No", false),
-        metricTile("Proximity", d.proximity_triggered ? "Yes" : "No", false)
+        metricTile("Motion", d.motion_detected ? "Yes" : "No", false)
       ].join("");
       const grid = document.getElementById("m1-grid");
       if(grid) {
@@ -1142,6 +1192,37 @@
       state.health.m3.source = src;
       state.health.m3.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
       setModuleStatus("m3-status", state.health.m3.mode, state.health.m3.mode === "mock" ? "simulated" : "data");
+      
+      // Display statistics (average and graph) if available
+      if(data.statistics) {
+        const stats = data.statistics;
+        const statsContainer = document.getElementById("m3-stats");
+        const avgElement = document.getElementById("m3-average");
+        const totalElement = document.getElementById("m3-total");
+        const chartElement = document.getElementById("m3-chart");
+        
+        if(statsContainer && avgElement && totalElement) {
+          statsContainer.style.display = "block";
+          
+          // Update average rating
+          if(stats.average_rating !== null && stats.average_rating !== undefined) {
+            avgElement.textContent = stats.average_rating.toFixed(2);
+            avgElement.style.color = stats.average_rating >= 4 ? "#10b981" : stats.average_rating >= 3 ? "#f59e0b" : "#ef4444";
+          } else {
+            avgElement.textContent = "—";
+          }
+          
+          // Update total ratings
+          totalElement.textContent = stats.total_ratings || 0;
+          
+          // Render rating distribution chart
+          if(chartElement && stats.rating_distribution) {
+            renderRatingChart(chartElement, stats.rating_distribution, stats.total_ratings);
+          }
+        }
+      }
+      
+      // Display individual feedback entry
       let html = "";
       if(d.report_type === "rating"){
         const stars = "★".repeat(Math.max(0, Number(d.rating || 0)));
@@ -1166,6 +1247,41 @@
       } else {
         console.error("m3-grid element not found");
       }
+    }
+    
+    function renderRatingChart(container, distribution, totalRatings) {
+      if(!distribution || totalRatings === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">No ratings yet</div>';
+        return;
+      }
+      
+      // Get max count for scaling
+      const maxCount = Math.max(...Object.values(distribution));
+      
+      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px;">Rating Distribution</div>';
+      
+      // Create bars for ratings 1-6
+      for(let rating = 1; rating <= 6; rating++) {
+        const count = distribution[rating] || 0;
+        const percentage = totalRatings > 0 ? (count / totalRatings * 100) : 0;
+        const barWidth = maxCount > 0 ? (count / maxCount * 100) : 0;
+        
+        chartHTML += `
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div style="width: 30px; font-weight: 600; color: var(--text);">${rating}</div>
+            <div style="flex: 1; margin: 0 10px;">
+              <div style="background: var(--borderSubtle); height: 20px; border-radius: 4px; overflow: hidden;">
+                <div style="background: ${rating >= 4 ? '#10b981' : rating >= 3 ? '#f59e0b' : '#ef4444'}; height: 100%; width: ${barWidth}%; transition: width 0.3s;"></div>
+              </div>
+            </div>
+            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text);">
+              ${count} (${percentage.toFixed(0)}%)
+            </div>
+          </div>
+        `;
+      }
+      
+      container.innerHTML = chartHTML;
     }
 
     // Chart.js: create once, update data only. Fixed-size parent prevents infinite resize loops.
@@ -1213,7 +1329,11 @@
         state.charts.hourly.update("none");
       }
       if(Array.isArray(patterns.week_same_time)){
-        const vals = patterns.week_same_time.map(d => Math.round(Number(d.occupancy || 0) * 100));
+        // Map occupancy values, using null for days without data (graph will skip these)
+        const vals = patterns.week_same_time.map(d => {
+          if(d.occupancy === null || d.occupancy === undefined) return null;
+          return Math.round(Number(d.occupancy) * 100);
+        });
         state.charts.weekly.data.datasets[0].data = vals;
         state.charts.weekly.update("none");
       }
@@ -1492,6 +1612,25 @@
         state.connectedModules[t].push(id);
         updateKpis();
       }
+      
+      // Update module status display based on module type
+      if(t === 'crowd_detection') {
+        setModuleStatus("m1-status", "active");
+        state.health.m1.lastSeen = Date.now();
+        state.health.m1.mode = "active";
+        log(`Module 1 (${id}) connected and active`);
+      } else if(t === 'environment') {
+        setModuleStatus("m2-status", "active");
+        state.health.m2.lastSeen = Date.now();
+        state.health.m2.mode = "active";
+        log(`Module 2 (${id}) connected and active`);
+      } else if(t === 'feedback') {
+        setModuleStatus("m3-status", "active");
+        state.health.m3.lastSeen = Date.now();
+        state.health.m3.mode = "active";
+        log(`Module 3 (${id}) connected and active`);
+      }
+      
       log(`Module connected (${t || "unknown"}: ${id || "unknown"})`);
     });
 
@@ -1547,6 +1686,43 @@
         console.warn("Crowd update received but data is null/undefined");
       }
     });
+    
+    socket.on("crowd_video_update", (data) => {
+      console.log("Crowd video update event received:", data);
+      log("Video frame received from " + (data.module_id || "unknown"));
+      
+      // Update module status when video frames are received
+      if(data.module_id) {
+        state.health.m1.lastSeen = Date.now();
+        setModuleStatus("m1-status", "active");
+        log(`Module ${data.module_id} is active (sending video frames)`);
+      }
+      
+      // Display video frame image if available
+      if(data.video_frame) {
+        try {
+          const imageContainer = document.getElementById("m1-image-container");
+          const imageElement = document.getElementById("m1-image");
+          if(imageContainer && imageElement) {
+            // Set image source from base64 data
+            imageElement.src = "data:image/jpeg;base64," + data.video_frame;
+            imageContainer.style.display = "block";
+            console.log("✓ Video frame image displayed");
+          }
+        } catch(error) {
+          console.error("Error displaying video frame image:", error);
+        }
+      }
+      
+      // If video frame includes crowd data, render it
+      if(data.data) {
+        try {
+          renderCrowd(data);
+        } catch(error) {
+          console.error("Error rendering crowd from video frame:", error);
+        }
+      }
+    });
     socket.on("environment_update", (data) => {
       console.log("Environment update event received:", data);
       log("Environment update received");
@@ -1585,6 +1761,153 @@
         }
       } else {
         console.warn("Feedback update received but data is null/undefined");
+      }
+    });
+    
+    socket.on("feedback_status_update", (data) => {
+      console.log("Feedback status update received:", data);
+      const isActive = data.is_active || false;
+      const statusElement = document.getElementById("m3-kiosk-status");
+      const indicatorElement = document.getElementById("m3-kiosk-indicator");
+      
+      if(statusElement && indicatorElement) {
+        if(isActive) {
+          statusElement.innerHTML = '<span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 5px; animation: pulse 2s infinite;"></span>In Use';
+          statusElement.style.background = "#d1fae5";
+          statusElement.style.color = "#065f46";
+          log(`Kiosk active (user detected${data.distance_cm ? `, ${data.distance_cm.toFixed(1)}cm away` : ""})`);
+        } else {
+          statusElement.innerHTML = '<span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; margin-right: 5px;"></span>Idle';
+          statusElement.style.background = "#e5e7eb";
+          statusElement.style.color = "#6b7280";
+          log("Kiosk idle (no user detected)");
+        }
+      }
+    });
+    
+    // AI Image Analysis Functions
+    let selectedImageFile = null;
+    
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if(file) {
+        selectedImageFile = file;
+        const fileName = file.name;
+        const fileSize = (file.size / 1024).toFixed(1);
+        document.getElementById("ai-image-name").textContent = `${fileName} (${fileSize} KB)`;
+        
+        // Show image preview
+        const previewDiv = document.getElementById("ai-image-preview");
+        const previewImg = document.getElementById("ai-preview-img");
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          previewImg.src = e.target.result;
+          previewDiv.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+        
+        // Enable analyze button
+        const analyzeBtn = document.getElementById("ai-analyze-btn");
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = "1";
+        analyzeBtn.style.cursor = "pointer";
+        
+        // Hide previous results
+        document.getElementById("ai-analysis-result").style.display = "none";
+        
+        log(`Image selected: ${fileName}`);
+      }
+    }
+    
+    async function analyzeImage() {
+      if(!selectedImageFile) {
+        alert("Please select an image first");
+        return;
+      }
+      
+      const analyzeBtn = document.getElementById("ai-analyze-btn");
+      const resultDiv = document.getElementById("ai-analysis-result");
+      
+      // Show loading state
+      analyzeBtn.disabled = true;
+      analyzeBtn.style.opacity = "0.5";
+      analyzeBtn.style.cursor = "not-allowed";
+      const originalText = analyzeBtn.textContent;
+      analyzeBtn.textContent = "Analyzing...";
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = '<div style="text-align: center; padding: var(--s16); color: var(--muted); font-size: 13px;">Analyzing image with AI...</div>';
+      
+      try {
+        const formData = new FormData();
+        formData.append('image', selectedImageFile);
+        
+        const response = await fetch('/api/analyze_image', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const data = await response.json();
+        
+        if(data.success && data.result) {
+          const result = data.result;
+          const count = data.people_count !== undefined ? data.people_count : (result.count || 0);
+          const confidence = data.confidence !== undefined ? data.confidence : (result.confidence || 0.85);
+          const confidencePercent = (confidence * 100).toFixed(0);
+          const details = result.details || "No description";
+          const crowdLevel = data.crowd_level || result.crowd_level || "unknown";
+          const module5Sent = data.module5_sent || false;
+          
+          resultDiv.innerHTML = `
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
+                <div style="font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;">Analysis Results</div>
+                ${module5Sent ? '<div style="font-size: 11px; color: var(--success); font-weight: 500;">✓ Sent to Module 5</div>' : ''}
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s16); margin-bottom: var(--s16);">
+                <div>
+                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">People Count</div>
+                  <div style="font-size: 24px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.2;">${count}</div>
+                </div>
+                <div>
+                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Confidence</div>
+                  <div style="font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: 1.2;">${confidencePercent}%</div>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Crowd Level</div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.02em;">${crowdLevel}</div>
+                </div>
+                <div style="grid-column: 1 / -1; padding-top: var(--s12); border-top: 1px solid var(--borderSubtle);">
+                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s8); font-weight: 500;">Details</div>
+                  <div style="font-size: 13px; color: var(--text); line-height: 1.5;">${details}</div>
+                </div>
+              </div>
+            </div>
+          `;
+          
+          log(`AI Analysis: ${count} people detected (${crowdLevel}, ${confidencePercent}% confidence)${module5Sent ? ' - Sent to Module 5' : ''}`);
+        } else {
+          resultDiv.innerHTML = `<div style="color: var(--danger); padding: var(--s12); font-size: 13px;">Error: ${data.error || "Unknown error"}</div>`;
+          log(`AI Analysis error: ${data.error || "Unknown error"}`, "error");
+        }
+      } catch(error) {
+        resultDiv.innerHTML = `<div style="color: var(--danger); padding: var(--s12); font-size: 13px;">Error: ${error.message}</div>`;
+        log(`AI Analysis error: ${error.message}`, "error");
+        console.error("Error analyzing image:", error);
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "Analyze";
+        analyzeBtn.style.opacity = "1";
+        analyzeBtn.style.cursor = "pointer";
+      }
+    }
+    
+    // Listen for AI analysis results via SocketIO
+    socket.on("ai_analysis_result", (data) => {
+      console.log("AI analysis result received:", data);
+      if(data.result) {
+        const result = data.result;
+        log(`AI Analysis complete: ${result.count} people detected`);
+        // Could update the crowd data display here if needed
       }
     });
 

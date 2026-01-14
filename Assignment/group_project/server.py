@@ -7,9 +7,207 @@ import json
 import random
 import threading
 import time
+import base64
+import os
+import sys
+from collections import defaultdict
+
+# AI Image Recognition (Claude API)
+ANTHROPIC_AVAILABLE = False
+anthropic_client = None
+anthropic_api_key = ''
+
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+    print("[INFO] Anthropic library imported successfully")
+except ImportError as e:
+    print(f"[WARNING] Failed to import anthropic library: {e}")
+    print("[INFO] Install with: pip install anthropic")
+    print(f"[DEBUG] Python executable: {sys.executable}")
+except Exception as e:
+    print(f"[WARNING] Unexpected error importing anthropic: {e}")
+    import traceback
+    traceback.print_exc()
+
+if ANTHROPIC_AVAILABLE:
+    # Get API key from environment variable first, then .env file, then hardcoded fallback
+    anthropic_api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    
+    # Try to load from .env file if env var not set
+    if not anthropic_api_key:
+        try:
+            env_path = os.path.join(os.path.dirname(__file__), '.env')
+            if os.path.exists(env_path):
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        # Skip comments and empty lines
+                        if line and not line.startswith('#'):
+                            if line.startswith('ANTHROPIC_API_KEY='):
+                                anthropic_api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
+                                print(f"[INFO] Using API key from .env file (length: {len(anthropic_api_key)})")
+                                break
+        except Exception as e:
+            print(f"[WARNING] Could not read .env file: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Hardcoded fallback removed for security
+    # Set ANTHROPIC_API_KEY environment variable or use .env file
+    if not anthropic_api_key:
+        print("[WARNING] No API key found. Set ANTHROPIC_API_KEY environment variable or use .env file")
+    
+    if anthropic_api_key:
+        try:
+            anthropic_client = Anthropic(api_key=anthropic_api_key)
+            print(f"[INFO] Anthropic API client initialized successfully (key length: {len(anthropic_api_key)})")
+        except Exception as e:
+            anthropic_client = None
+            print(f"[ERROR] Failed to initialize Anthropic client: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        anthropic_client = None
+        print("[WARNING] ANTHROPIC_API_KEY not set. AI image analysis disabled.")
 
 app = Flask(__name__)
+# Set max content length for file uploads (16MB as per documentation)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+
+# --- Historical Data Storage ---
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
+
+def load_history():
+    """Load historical data from JSON file"""
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert weekly dict keys back to int if needed (JSON stores keys as strings)
+                if 'weekly' in data:
+                    weekly_fixed = {}
+                    for hour_str, days in data['weekly'].items():
+                        weekly_fixed[int(hour_str)] = days
+                    data['weekly'] = weekly_fixed
+                # Convert hourly hour keys to int if needed
+                if 'hourly' in data:
+                    hourly_fixed = {}
+                    for date_str, hours in data['hourly'].items():
+                        hourly_fixed[date_str] = {int(h): v for h, v in hours.items()}
+                    data['hourly'] = hourly_fixed
+                return data
+    except Exception as e:
+        print(f"[WARNING] Could not load history file: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Return default structure if file doesn't exist or error
+    return {
+        'hourly': {},  # {date: {hour: occupancy}}
+        'weekly': {}  # {hour: {day: [occupancy_values]}}
+    }
+
+def save_history(history_data):
+    """Save historical data to JSON file"""
+    try:
+        # Convert to serializable format
+        history_to_save = {
+            'hourly': history_data['hourly'],
+            'weekly': {str(k): v for k, v in history_data['weekly'].items()}
+        }
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history_to_save, f, indent=2)
+    except Exception as e:
+        print(f"[WARNING] Could not save history file: {e}")
+
+def update_history(occupancy, timestamp=None):
+    """Update historical data with new occupancy reading"""
+    if timestamp is None:
+        timestamp = datetime.now()
+    
+    history = load_history()
+    date_str = timestamp.strftime('%Y-%m-%d')
+    hour = timestamp.hour
+    day_name = timestamp.strftime('%a')  # Mon, Tue, Wed, etc.
+    
+    # Update hourly data for today
+    if date_str not in history['hourly']:
+        history['hourly'][date_str] = {}
+    history['hourly'][date_str][hour] = occupancy
+    
+    # Update weekly pattern (same time, different days)
+    if hour not in history['weekly']:
+        history['weekly'][hour] = {'Mon': [], 'Tue': [], 'Wed': [], 'Thu': [], 'Fri': [], 'Sat': [], 'Sun': []}
+    
+    # Add to weekly data for this day/hour (keep last 30 entries per day/hour)
+    # Only add if occupancy changed significantly (> 0.05) to avoid duplicate entries
+    day_data = history['weekly'][hour][day_name]
+    
+    # Check if we should add this reading (avoid duplicates from polling)
+    should_add = (
+        len(day_data) == 0 or  # First reading
+        abs(day_data[-1] - occupancy) > 0.05 or  # Significant change (>5%)
+        (len(day_data) < 5)  # Always keep at least 5 readings for averaging
+    )
+    
+    if should_add:
+        day_data.append(occupancy)
+        # Keep last 30 entries per day/hour
+        if len(day_data) > 30:
+            day_data.pop(0)
+    
+    save_history(history)
+    return history
+
+def get_today_hourly_pattern(history, current_hour, current_occupancy):
+    """Get hourly pattern for today from history - ONLY measured data, no projections"""
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    today_hourly = []
+    
+    for hour in range(8, 22):  # 8 AM to 10 PM
+        if hour < current_hour:
+            # Past hours: ONLY use historical data if available (measured data only)
+            if date_str in history['hourly'] and hour in history['hourly'][date_str]:
+                occupancy = history['hourly'][date_str][hour]
+                today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.0, occupancy))})
+            # If no data, skip this hour (don't show estimates)
+        elif hour == current_hour:
+            # Current hour: use actual current occupancy (measured)
+            today_hourly.append({'hour': hour, 'occupancy': current_occupancy})
+        else:
+            # Future hours: skip (don't show projections)
+            pass
+    
+    return today_hourly
+
+def get_weekly_pattern(history, current_hour, current_occupancy):
+    """Get weekly pattern for same time across different days - ONLY measured data, no projections"""
+    week_same_time = []
+    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    
+    if current_hour in history['weekly']:
+        for day in days:
+            day_data = history['weekly'][current_hour][day]
+            if day_data and len(day_data) > 0:
+                # Use average occupancy for this day/hour (measured data only)
+                avg_occupancy = sum(day_data) / len(day_data)
+                week_same_time.append({'day': day, 'occupancy': min(1.0, max(0.0, avg_occupancy))})
+            else:
+                # No data for this day - add with null/None occupancy so graph skips it
+                # This maintains day order alignment with graph labels
+                week_same_time.append({'day': day, 'occupancy': None})
+    else:
+        # No historical data at all - return all days with None to maintain alignment
+        for day in days:
+            week_same_time.append({'day': day, 'occupancy': None})
+    
+    return week_same_time
+
+# Initialize history on startup
+historical_data = load_history()
+print(f"[INFO] Historical data loaded: {len(historical_data['hourly'])} days, {len(historical_data['weekly'])} hours tracked")
 
 # --- Data Storage ---
 connected_modules = {
@@ -230,6 +428,190 @@ def index():
 @app.route('/module5')
 def module5_test():
     return render_template('module5.html')
+@app.route('/module1')
+def module5_test():
+    return render_template('module1.html')
+
+@app.route('/api/analyze_image', methods=['POST'])
+def analyze_image():
+    """Analyze uploaded image using Claude AI for people counting"""
+    try:
+        if not anthropic_client:
+            return jsonify({'error': 'AI service not available. ANTHROPIC_API_KEY not configured.'}), 503
+        
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image file provided'}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Read and encode image (using standard_b64encode as per documentation)
+        image_data = file.read()
+        image_base64 = base64.standard_b64encode(image_data).decode('utf-8')
+        
+        # Determine content type
+        content_type = file.content_type or 'image/jpeg'
+        
+        # Validate file size (max 16MB as per documentation)
+        max_size = 16 * 1024 * 1024  # 16MB
+        if len(image_data) > max_size:
+            return jsonify({'error': f'File too large. Maximum size is {max_size / (1024*1024):.0f}MB'}), 400
+        
+        print(f"[{datetime.now()}] Analyzing image with AI (size: {len(image_data)} bytes)")
+        
+        # Send to Claude API
+        message = anthropic_client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=1000,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image',
+                        'source': {
+                            'type': 'base64',
+                            'media_type': content_type,
+                            'data': image_base64,
+                        },
+                    },
+                    {
+                        'type': 'text',
+                        'text': '''Count people in this basketball court image. 
+                        Analyze the scene and return ONLY valid JSON in this exact format:
+                        {
+                            "count": <number>,
+                            "details": "<brief description>",
+                            "crowd_level": "<empty|light|normal|busy|full>",
+                            "confidence": <0.0-1.0>
+                        }
+                        Do not include any markdown formatting or code blocks.'''
+                    }
+                ],
+            }],
+        )
+        
+        # Parse response
+        response_text = message.content[0].text.strip()
+        # Remove markdown code blocks if present
+        response_text = response_text.replace('```json', '').replace('```', '').strip()
+        
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Try to extract JSON from response
+            import re
+            json_match = re.search(r'\{[^}]+\}', response_text)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                raise ValueError(f"Could not parse JSON from response: {response_text[:200]}")
+        
+        print(f"[{datetime.now()}] AI Analysis result: {result}")
+        
+        # Extract people count and confidence from AI result
+        people_count = result.get('count', 0)
+        confidence = result.get('confidence', 0.85)
+        crowd_level = result.get('crowd_level', 'empty')
+        
+        # Map crowd_level to standard values if needed
+        if isinstance(crowd_level, str):
+            crowd_level = crowd_level.lower()
+            if crowd_level not in ['empty', 'light', 'normal', 'busy', 'full']:
+                # Map to closest standard level
+                if people_count == 0:
+                    crowd_level = 'empty'
+                elif people_count <= 2:
+                    crowd_level = 'light'
+                elif people_count <= 5:
+                    crowd_level = 'normal'
+                elif people_count <= 7:
+                    crowd_level = 'busy'
+                else:
+                    crowd_level = 'full'
+        
+        # Create crowd data structure for Module 1
+        crowd_data = {
+            'module_id': 'ai_image_analysis',
+            'module_type': 'crowd_detection',
+            'timestamp': datetime.now().isoformat(),
+            'data': {
+                'people_count': people_count,
+                'crowd_level': crowd_level,
+                'confidence': confidence,
+                'source': 'ai_image_analysis'
+            }
+        }
+        
+        # Update current_data with AI analysis results
+        current_data['crowd'] = crowd_data
+        
+        # Update historical data with AI analysis result
+        occupancy = min(1.0, people_count / 10.0)
+        global historical_data
+        historical_data = update_history(occupancy)
+        
+        # Get historical patterns for graphs
+        current_hour = datetime.now().hour
+        today_hourly = get_today_hourly_pattern(historical_data, current_hour, occupancy)
+        week_same_time = get_weekly_pattern(historical_data, current_hour, occupancy)
+        
+        # Send ONLY Module 1 (crowd) data to Module 5 as partial update
+        # This allows Module 5 to update occupancy without requiring all modules
+        partial_module5_data = {
+            'court_id': 'basketball_a',
+            'timestamp': datetime.now().isoformat(),
+            'current': {
+                'occupancy': occupancy,
+                'people_count': people_count,
+                'crowd_level': crowd_level,
+                'estimated_wait_min': {
+                    'empty': 0,
+                    'light': 5,
+                    'normal': 10,
+                    'busy': 20,
+                    'full': 30
+                }.get(crowd_level, 10),
+                'confidence': confidence,
+                'last_update': 'Just now',
+                'source': 'ai_image_analysis'
+            },
+            'patterns': {
+                'today_hourly': today_hourly,
+                'week_same_time': week_same_time
+            }
+        }
+        
+        # Emit partial Module 5 update (only crowd/occupancy data)
+        socketio.emit('DisplayUpdate', partial_module5_data)
+        
+        # Also emit to dashboard for preview
+        socketio.emit('crowd_update', crowd_data)
+        
+        print(f"[{datetime.now()}] Sent AI analysis to Module 5 (partial update): {people_count} people, {confidence:.2%} confidence, occupancy: {partial_module5_data['current']['occupancy']:.1%}")
+        
+        # Emit result via SocketIO for real-time dashboard update
+        socketio.emit('ai_analysis_result', {
+            'timestamp': datetime.now().isoformat(),
+            'result': result,
+            'image_size': len(image_data),
+            'module5_sent': True
+        })
+        
+        return jsonify({
+            'success': True,
+            'result': result,
+            'people_count': people_count,
+            'confidence': confidence,
+            'crowd_level': crowd_level,
+            'module5_sent': True,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[{datetime.now()}] Error analyzing image: {error_msg}")
+        return jsonify({'error': error_msg}), 500
 
 @app.route('/api/current_data')
 def get_current_data():
@@ -291,6 +673,22 @@ def handle_crowd_data(data):
     """Receive crowd detection data from Module 1"""
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
+    
+    # Update historical data with new reading
+    if 'data' in data:
+        people_count = data['data'].get('people_count', 0)
+        occupancy = min(1.0, people_count / 10.0)
+        timestamp_str = data.get('timestamp')
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except:
+                timestamp = datetime.now()
+        else:
+            timestamp = datetime.now()
+        global historical_data
+        historical_data = update_history(occupancy, timestamp)
+    
     socketio.emit('crowd_update', data)
     
     # Generate and send Module 5 data based on current Modules 1-3 data
@@ -307,7 +705,30 @@ def handle_crowd_data(data):
 @socketio.on('CrowdVideoFrameEvent')
 def handle_crowd_video(data):
     """Receive video frames from Module 1"""
-    print(f"[{datetime.now()}] Received Video Frame from {data.get('module_id', 'unknown')}")
+    module_id = data.get('module_id', 'unknown')
+    print(f"[{datetime.now()}] Received Video Frame from {module_id}")
+    
+    # Auto-register module if not already registered (when receiving video frames)
+    module_type = 'crowd_detection'
+    if module_id != 'unknown' and module_id not in connected_modules[module_type]:
+        connected_modules[module_type].append(module_id)
+        print(f"[{datetime.now()}] Auto-registered module from video frame: {module_id} ({module_type})")
+        
+        # Notify dashboard of new connection
+        socketio.emit('module_connected', {
+            'module_id': module_id,
+            'module_type': module_type,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    # Update current data if video frame includes crowd data
+    if 'data' in data and data['data']:
+        # Merge video frame data with existing crowd data
+        if current_data['crowd']:
+            current_data['crowd'].update(data)
+        else:
+            current_data['crowd'] = data
+    
     socketio.emit('crowd_video_update', data)
 
 # --- MODULE 2: ENVIRONMENT DATA ---
@@ -330,6 +751,27 @@ def handle_environment_data(data):
     print(f"[{datetime.now()}] Module 5 data generated from Module 2 data and sent to dashboard")
 
 # --- MODULE 3: FEEDBACK DATA ---
+@socketio.on('FeedbackStatusEvent')
+def handle_feedback_status(data):
+    """Receive kiosk status update from Module 3 (on/off based on proximity)"""
+    module_id = data.get('module_id', 'unknown')
+    is_active = data.get('is_active', False)
+    status = 'active' if is_active else 'idle'
+    distance = data.get('distance_cm')
+    
+    print(f"[{datetime.now()}] Module 3 Status: {module_id} is {status}" + 
+          (f" (distance: {distance:.1f}cm)" if distance else ""))
+    
+    # Emit status update to dashboard
+    socketio.emit('feedback_status_update', {
+        'module_id': module_id,
+        'status': status,
+        'is_active': is_active,
+        'distance_cm': distance,
+        'screen_on': is_active,
+        'timestamp': datetime.now().isoformat()
+    })
+
 @socketio.on('FeedbackDataEvent')
 def handle_feedback_data(data):
     """Receive feedback data from Module 3"""
@@ -338,7 +780,34 @@ def handle_feedback_data(data):
     current_data['feedback'].append(data)
     if len(current_data['feedback']) > 50:
         current_data['feedback'].pop(0)
-    socketio.emit('feedback_update', data)
+    
+    # Calculate average rating from all feedback entries
+    ratings = []
+    for feedback in current_data['feedback']:
+        if feedback.get('data', {}).get('report_type') == 'rating':
+            rating = feedback.get('data', {}).get('rating')
+            if rating is not None:
+                ratings.append(rating)
+    
+    average_rating = None
+    total_ratings = len(ratings)
+    if total_ratings > 0:
+        average_rating = round(sum(ratings) / total_ratings, 2)
+    
+    # Create rating distribution for graph
+    rating_distribution = {}
+    for rating in ratings:
+        rating_distribution[rating] = rating_distribution.get(rating, 0) + 1
+    
+    # Add calculated statistics to the update
+    update_data = data.copy()
+    update_data['statistics'] = {
+        'average_rating': average_rating,
+        'total_ratings': total_ratings,
+        'rating_distribution': rating_distribution
+    }
+    
+    socketio.emit('feedback_update', update_data)
     
     # Generate and send Module 5 data based on current Modules 1-3 data
     # (Only update if we have crowd or environment data, otherwise feedback alone isn't enough)
@@ -432,31 +901,15 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
     occupancy = min(1.0, people_count / 10.0)
     current_hour = datetime.now().hour
     
-    # Generate hourly pattern based on current occupancy
-    today_hourly = []
-    for hour in range(8, 22):  # 8 AM to 10 PM
-        if hour < current_hour:
-            # Past hours: use current occupancy as base with some variation
-            base_occupancy = occupancy * (0.7 + random.random() * 0.3)
-            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
-        elif hour == current_hour:
-            today_hourly.append({'hour': hour, 'occupancy': occupancy})
-        else:
-            # Future hours: estimate based on typical patterns
-            base_occupancy = occupancy * (0.6 + random.random() * 0.4)
-            today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.1, base_occupancy))})
+    # Load historical data (don't update here - only update when NEW data arrives)
+    global historical_data
+    historical_data = load_history()
     
-    # Weekly pattern (use current occupancy as peak)
-    weekly_peak = occupancy * 0.9
-    week_same_time = [
-        {'day': 'Mon', 'occupancy': weekly_peak * 0.9},
-        {'day': 'Tue', 'occupancy': weekly_peak * 0.85},
-        {'day': 'Wed', 'occupancy': weekly_peak},
-        {'day': 'Thu', 'occupancy': weekly_peak * 0.95},
-        {'day': 'Fri', 'occupancy': weekly_peak * 1.0},
-        {'day': 'Sat', 'occupancy': weekly_peak * 0.75},
-        {'day': 'Sun', 'occupancy': weekly_peak * 0.5}
-    ]
+    # Get hourly pattern from actual historical data
+    today_hourly = get_today_hourly_pattern(historical_data, current_hour, occupancy)
+    
+    # Get weekly pattern from actual historical data
+    week_same_time = get_weekly_pattern(historical_data, current_hour, occupancy)
     
     # Generate alternatives (fewer if current court is busy)
     num_alternatives = 2 if occupancy < 0.7 else 3
@@ -969,6 +1422,21 @@ def test_disconnect():
 
 if __name__ == '__main__':
     import socket
+    # Print Anthropic client status on startup
+    print("=" * 60)
+    print("SERVER STARTUP - Anthropic AI Status:")
+    if anthropic_client:
+        print(f"  ✓ Anthropic client initialized successfully")
+        print(f"  ✓ AI image analysis: ENABLED")
+    else:
+        print(f"  ✗ Anthropic client: NOT INITIALIZED")
+        print(f"  ✗ AI image analysis: DISABLED")
+        if not ANTHROPIC_AVAILABLE:
+            print(f"  → Reason: anthropic library not installed")
+        else:
+            print(f"  → Reason: API key not found")
+    print("=" * 60)
+    
     # Get the machine's hostname to determine IP
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
