@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Module 3 - Feedback Form</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <style>
+    :root{
+      /* Pure neutrals (Boldness & Clarity) */
+      --bg: #fafafa;
+      --card: #ffffff;
+      --text: #171717;
+      --muted: #737373;
+      --faint: #a3a3a3;
+      --border: rgba(0,0,0,0.08);
+      --borderSubtle: rgba(0,0,0,0.05);
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+
+      /* Accent (one) */
+      --accent: #2563eb; /* blue-600 */
+      --accentBg: rgba(37,99,235,0.08);
+
+      /* Semantic */
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #ea580c;
+
+      /* Grid */
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
+      --s4: 4px;
+      --s8: 8px;
+      --s12: 12px;
+      --s16: 16px;
+      --s24: 24px;
+      --s32: 32px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: var(--s24);
+      min-height: 100vh;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r12);
+      box-shadow: var(--shadow);
+      padding: var(--s24);
+      margin-bottom: var(--s24);
+    }
+
+    .cardHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding-bottom: var(--s16);
+      border-bottom: 1px solid var(--borderSubtle);
+      margin-bottom: var(--s16);
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .header {
+      margin-bottom: var(--s32);
+    }
+
+    .headerRow {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--s16);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s8);
+      padding: 6px 10px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--faint);
+    }
+
+    .dot.online { background: var(--success); }
+    .dot.offline { background: var(--danger); }
+
+    .btn {
+      padding: 10px 16px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      background: var(--bg);
+      border-color: var(--muted);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .btn.primary:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .inputGroup {
+      margin-bottom: var(--s16);
+    }
+
+    .inputGroup label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: var(--s8);
+    }
+
+    .inputGroup input,
+    .inputGroup textarea,
+    .inputGroup select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r8);
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--card);
+      color: var(--text);
+    }
+
+    .inputGroup input:focus,
+    .inputGroup textarea:focus,
+    .inputGroup select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accentBg);
+    }
+
+    .inputGroup textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .inputGroup input[type="radio"],
+    .inputGroup input[type="checkbox"] {
+      width: auto;
+      margin-right: var(--s8);
+    }
+
+    .radioGroup,
+    .checkboxGroup {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s8);
+    }
+
+    .radioOption,
+    .checkboxOption {
+      display: flex;
+      align-items: center;
+      gap: var(--s8);
+    }
+
+    .statusMessage {
+      padding: var(--s12);
+      border-radius: var(--r8);
+      margin-top: var(--s16);
+      font-size: 14px;
+      display: none;
+    }
+
+    .statusMessage.show {
+      display: block;
+    }
+
+    .statusMessage.success {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(22, 163, 74, 0.2);
+    }
+
+    .statusMessage.error {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(220, 38, 38, 0.2);
+    }
+
+    .statusMessage.info {
+      background: var(--accentBg);
+      color: var(--accent);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+
+    .link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
+
+    .helpText {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: var(--s8);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <div class="header">
+      <div class="headerRow">
+        <div class="brand">
+          <h1>Module 3 - Feedback Form</h1>
+          <p class="subtitle">Submit questions and feedback to display on dashboard</p>
+        </div>
+        <div class="pill">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">Connecting...</span>
+        </div>
+      </div>
+      <div style="margin-top: var(--s12);">
+        <a href="/" class="link">← Back to Dashboard</a>
+      </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="card">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Connection</p>
+          <p class="subtitle">Server connection status</p>
+        </div>
+      </div>
+      <div>
+        <div style="display: flex; align-items: center; gap: var(--s8);">
+          <span class="dot" id="conn-dot"></span>
+          <span id="conn-text">Disconnected</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback Form -->
+    <div class="card">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Submit Feedback</p>
+          <p class="subtitle">Your feedback will appear on the dashboard under Module 3</p>
+        </div>
+      </div>
+
+      <form id="feedback-form">
+        <!-- TODO: Add your form fields here -->
+        <!-- Example fields below - customize as needed -->
+
+        <!-- Court ID -->
+        <div class="inputGroup">
+          <label for="court-id">Court ID *</label>
+          <input type="text" id="court-id" value="basketball_a" placeholder="basketball_a" required>
+          <div class="helpText">Which court is this feedback for?</div>
+        </div>
+
+        <!-- Report Type -->
+        <div class="inputGroup">
+          <label>Report Type *</label>
+          <div class="radioGroup">
+            <div class="radioOption">
+              <input type="radio" id="type-rating" name="report_type" value="rating" checked>
+              <label for="type-rating" style="margin: 0; font-weight: normal;">Rating</label>
+            </div>
+            <div class="radioOption">
+              <input type="radio" id="type-comment" name="report_type" value="comment">
+              <label for="type-comment" style="margin: 0; font-weight: normal;">Comment</label>
+            </div>
+            <div class="radioOption">
+              <input type="radio" id="type-question" name="report_type" value="question">
+              <label for="type-question" style="margin: 0; font-weight: normal;">Question</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rating (shown when rating is selected) -->
+        <div class="inputGroup" id="rating-group">
+          <label for="rating">Rating (1-5) *</label>
+          <select id="rating" required>
+            <option value="">Select rating...</option>
+            <option value="1">1 - Poor</option>
+            <option value="2">2 - Fair</option>
+            <option value="3">3 - Good</option>
+            <option value="4">4 - Very Good</option>
+            <option value="5">5 - Excellent</option>
+          </select>
+        </div>
+
+        <!-- Comment/Question Text -->
+        <div class="inputGroup" id="text-group">
+          <label for="feedback-text">Comment or Question *</label>
+          <textarea id="feedback-text" placeholder="Enter your feedback, question, or comment here..." required></textarea>
+        </div>
+
+        <!-- TODO: Add more fields as needed -->
+        <!-- Examples:
+        <div class="inputGroup">
+          <label for="user-name">Your Name</label>
+          <input type="text" id="user-name" placeholder="Optional">
+        </div>
+
+        <div class="inputGroup">
+          <label for="category">Category</label>
+          <select id="category">
+            <option value="">Select...</option>
+            <option value="facility">Facility</option>
+            <option value="equipment">Equipment</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        -->
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn primary" id="btn-submit" style="width: 100%;">Submit Feedback</button>
+
+        <!-- Status Message -->
+        <div class="statusMessage" id="status-msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Socket.IO connection
+    const socket = io({
+      autoConnect: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
+
+    let isConnected = false;
+
+    // Update connection status
+    function updateConnectionStatus(connected) {
+      isConnected = connected;
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      const connDot = document.getElementById('conn-dot');
+      const connText = document.getElementById('conn-text');
+
+      if (connected) {
+        dot.classList.add('online');
+        dot.classList.remove('offline');
+        text.textContent = 'Connected';
+        connDot.classList.add('online');
+        connDot.classList.remove('offline');
+        connText.textContent = 'Connected to server';
+      } else {
+        dot.classList.remove('online');
+        dot.classList.add('offline');
+        text.textContent = 'Disconnected';
+        connDot.classList.remove('online');
+        connDot.classList.add('offline');
+        connText.textContent = 'Disconnected';
+      }
+    }
+
+    // Socket event handlers
+    socket.on('connect', () => {
+      updateConnectionStatus(true);
+      showStatus('success', 'Connected to server', 'status-msg');
+    });
+
+    socket.on('disconnect', (reason) => {
+      updateConnectionStatus(false);
+      if (reason === 'io server disconnect') {
+        showStatus('error', 'Disconnected by server', 'status-msg');
+      } else {
+        showStatus('error', 'Disconnected from server', 'status-msg');
+      }
+    });
+
+    socket.on('connect_error', (error) => {
+      updateConnectionStatus(false);
+      showStatus('error', 'Connection error: ' + (error.message || 'Unable to connect'), 'status-msg');
+    });
+
+    // TODO: Add any custom socket event listeners here
+    // Example:
+    // socket.on('feedback_submitted', (data) => {
+    //   showStatus('success', 'Feedback submitted successfully!', 'status-msg');
+    // });
+
+    // Form submission handler
+    document.getElementById('feedback-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      if (!isConnected) {
+        showStatus('error', 'Not connected to server. Please wait...', 'status-msg');
+        return;
+      }
+
+      // TODO: Collect form data and structure it according to your needs
+      // The data structure should match what the server expects for FeedbackDataEvent
+      
+      const formData = {
+        module_id: 'web_form_' + Date.now(), // TODO: Change this to your module ID
+        court_id: document.getElementById('court-id').value.trim(),
+        timestamp: new Date().toISOString(),
+        data: {
+          report_type: document.querySelector('input[name="report_type"]:checked').value,
+          // TODO: Add your custom fields here
+          // Examples:
+          // rating: document.getElementById('rating').value,
+          // comment: document.getElementById('feedback-text').value,
+          // user_name: document.getElementById('user-name').value,
+          // category: document.getElementById('category').value,
+        }
+      };
+
+      // Add rating if report type is rating
+      if (formData.data.report_type === 'rating') {
+        const rating = document.getElementById('rating').value;
+        if (rating) {
+          formData.data.rating = parseInt(rating);
+        }
+      }
+
+      // Add text for comment or question
+      if (formData.data.report_type === 'comment' || formData.data.report_type === 'question') {
+        const text = document.getElementById('feedback-text').value.trim();
+        if (text) {
+          formData.data.comment = text;
+        }
+      }
+
+      // TODO: Add validation here
+      // Example:
+      // if (!formData.court_id) {
+      //   showStatus('error', 'Please enter a court ID', 'status-msg');
+      //   return;
+      // }
+
+      // Show loading state
+      const submitBtn = document.getElementById('btn-submit');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+      showStatus('info', 'Submitting feedback...', 'status-msg');
+
+      // Emit feedback data event
+      // TODO: Adjust the event name and payload structure as needed
+      socket.emit('FeedbackDataEvent', formData, (response) => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Feedback';
+        
+        if (response && response.status === 'success') {
+          showStatus('success', 'Feedback submitted successfully!', 'status-msg');
+          // TODO: Optionally reset form
+          // document.getElementById('feedback-form').reset();
+        } else {
+          showStatus('error', response?.message || 'Failed to submit feedback', 'status-msg');
+        }
+      });
+
+      // Alternative: If server doesn't send acknowledgment, use this:
+      // socket.emit('FeedbackDataEvent', formData);
+      // showStatus('success', 'Feedback submitted!', 'status-msg');
+      // submitBtn.disabled = false;
+      // submitBtn.textContent = 'Submit Feedback';
+    });
+
+    // Show/hide fields based on report type
+    const reportTypeInputs = document.querySelectorAll('input[name="report_type"]');
+    reportTypeInputs.forEach(input => {
+      input.addEventListener('change', () => {
+        const selectedType = input.value;
+        const ratingGroup = document.getElementById('rating-group');
+        const textGroup = document.getElementById('text-group');
+        const ratingInput = document.getElementById('rating');
+        const textInput = document.getElementById('feedback-text');
+
+        if (selectedType === 'rating') {
+          ratingGroup.style.display = 'block';
+          textGroup.style.display = 'none';
+          ratingInput.required = true;
+          textInput.required = false;
+        } else {
+          ratingGroup.style.display = 'none';
+          textGroup.style.display = 'block';
+          ratingInput.required = false;
+          textInput.required = true;
+        }
+      });
+    });
+
+    // Initialize: Hide rating group initially if comment/question is selected
+    const initialType = document.querySelector('input[name="report_type"]:checked').value;
+    if (initialType !== 'rating') {
+      document.getElementById('rating-group').style.display = 'none';
+      document.getElementById('rating').required = false;
+    }
+
+    // Status message helper
+    function showStatus(type, message, targetId) {
+      const el = document.getElementById(targetId);
+      el.className = `statusMessage ${type} show`;
+      el.textContent = message;
+      setTimeout(() => {
+        el.classList.remove('show');
+      }, 5000);
+    }
+
+    // Initialize connection status
+    updateConnectionStatus(false);
+  </script>
+</body>
+</html>
