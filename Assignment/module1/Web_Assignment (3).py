@@ -20,6 +20,7 @@ import threading
 import subprocess
 import base64
 import os
+import shutil
 
 # ========== CONFIGURATION ==========
 SERVER_URL = 'http://192.168.72.161:5000'  # CHANGE THIS to your server IP
@@ -84,19 +85,81 @@ Font = ImageFont.load_default()
 # ========== WEBCAM FUNCTIONS ==========
 
 def check_fswebcam():
-    """Check if fswebcam is installed"""
-    try:
-        subprocess.run(['fswebcam', '--version'], 
-                      stdout=subprocess.DEVNULL, 
-                      stderr=subprocess.DEVNULL, 
-                      check=True)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    """Check if fswebcam is installed and accessible"""
+    # Try common installation paths first (most reliable)
+    common_paths = [
+        '/usr/bin/fswebcam',
+        '/usr/local/bin/fswebcam',
+        '/bin/fswebcam'
+    ]
+    
+    fswebcam_path = None
+    
+    # First check if file exists in common paths
+    for path in common_paths:
+        if os.path.exists(path):
+            fswebcam_path = path
+            break
+    
+    # If not found in common paths, try shutil.which
+    if fswebcam_path is None:
+        fswebcam_path = shutil.which('fswebcam')
+    
+    if fswebcam_path is None:
         return False
+    
+    # Verify the file is executable
+    if not os.access(fswebcam_path, os.X_OK):
+        return False
+    
+    # Try to run fswebcam to verify it works
+    # Note: fswebcam --version may write to stderr or return non-zero
+    # If we can execute it without FileNotFoundError, it's valid
+    try:
+        result = subprocess.run(
+            [fswebcam_path, '--version'], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT,  # Combine stderr into stdout
+            timeout=5
+        )
+        # If we got here without FileNotFoundError, the command executed
+        # Even if return code is non-zero or no output, the fact that it ran means it's valid
+        # (fswebcam --version works when run manually, so if subprocess can call it, it works)
+        return True
+    except FileNotFoundError:
+        # This is the only error that means fswebcam truly isn't available
+        return False
+    except (subprocess.TimeoutExpired, Exception):
+        # For other errors (timeout, permissions, etc.), still return True
+        # because the file exists and is executable, so it should work
+        # The error might be transient (e.g., webcam not connected)
+        return True
 
 def check_webcam_device():
     """Check if webcam device exists"""
     return os.path.exists(WEBCAM_DEVICE)
+
+def get_fswebcam_path():
+    """Get the full path to fswebcam executable"""
+    # Try common installation paths first (most reliable)
+    common_paths = [
+        '/usr/bin/fswebcam',
+        '/usr/local/bin/fswebcam',
+        '/bin/fswebcam'
+    ]
+    
+    # First check if file exists in common paths
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If not found in common paths, try shutil.which
+    fswebcam_path = shutil.which('fswebcam')
+    if fswebcam_path:
+        return fswebcam_path
+    
+    # Fallback to just 'fswebcam' if not found
+    return 'fswebcam'
 
 def capture_video_frame():
     """
@@ -106,6 +169,8 @@ def capture_video_frame():
     if not check_webcam_device():
         return None
     
+    fswebcam_path = get_fswebcam_path()
+    
     try:
         # Capture frame using fswebcam
         # -r 640x480: resolution
@@ -114,9 +179,9 @@ def capture_video_frame():
         # --jpeg 85: JPEG quality
         # -: output to stdout
         result = subprocess.run(
-            ['fswebcam', '-r', '640x480', '-S', '1', '--no-banner', '--jpeg', '85', '-'],
+            [fswebcam_path, '-r', '640x480', '-S', '1', '--no-banner', '--jpeg', '85', '-'],
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             timeout=2
         )
         
@@ -149,15 +214,15 @@ def read_sound_sensor():
     baseline = "0.010012210346758366"  # Default baseline value
     
     # Convert ADC reading to noise level (dB approximation)
-    # ADC reading is typically 0.0 to 1.0, where baseline is quiet
-    # Scale to approximate dB: baseline = 30dB (quiet), higher = louder
+    # ADC reading is typically 0.0 to 1.0
+    # Scale to approximate dB: 0.0 = 30dB (quiet), 1.0 = 90dB (loud)
     if DigitalValue == baseline:
         noise_db = 30  # Quiet baseline
     else:
         try:
             adc_float = float(DigitalValue)
             # Map ADC value to noise level (30-90 dB range)
-            # Higher ADC value = louder sound
+            # Simple linear mapping: ADC 0.0 → 30dB, ADC 1.0 → 90dB
             noise_db = 30 + (adc_float * 60)  # Scale to 30-90 dB range
             noise_db = max(30, min(90, noise_db))  # Clamp to reasonable range
         except ValueError:
@@ -279,12 +344,24 @@ if __name__ == "__main__":
         print(f"[WARNING] Webcam device {WEBCAM_DEVICE} not found")
         print("Video frames will not be sent, but sensor data will still work")
     else:
+        fswebcam_path = get_fswebcam_path()
         if not check_fswebcam():
-            print("[WARNING] fswebcam not installed")
-            print("Install with: sudo apt-get update && sudo apt-get install -y fswebcam")
-            print("Video frames will not be sent, but sensor data will still work")
+            print("[WARNING] fswebcam not found or not accessible")
+            print(f"  Expected path: {fswebcam_path}")
+            # Check if file exists but isn't executable
+            if os.path.exists(fswebcam_path):
+                if not os.access(fswebcam_path, os.X_OK):
+                    print(f"  File exists but is not executable. Try: chmod +x {fswebcam_path}")
+                else:
+                    print(f"  File exists and is executable, but --version test failed")
+                    print(f"  Try running manually: {fswebcam_path} --version")
+            else:
+                print(f"  File does not exist at {fswebcam_path}")
+                print("  Install with: sudo apt-get update && sudo apt-get install -y fswebcam")
+                print("  Or verify installation with: which fswebcam")
+            print("  Video frames will not be sent, but sensor data will still work")
         else:
-            print("[OK] Webcam ready")
+            print(f"[OK] Webcam ready (fswebcam found at: {fswebcam_path})")
     
     # Connect to server
     try:

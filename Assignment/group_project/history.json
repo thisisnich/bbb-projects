@@ -1,49 +1,344 @@
 {
-  "hourly": {
-    "2026-01-14": {
-      "14": 0.7
+  "entries": [
+    {
+      "people_count": 0,
+      "timestamp": "2026-01-14T08:00:00"
+    },
+    {
+      "people_count": 1,
+      "timestamp": "2026-01-14T09:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-14T10:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-14T11:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-14T12:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-14T13:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-14T14:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-14T15:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-14T16:00:00"
+    },
+    {
+      "people_count": 9,
+      "timestamp": "2026-01-14T17:00:00"
+    },
+    {
+      "people_count": 10,
+      "timestamp": "2026-01-14T18:00:00"
+    },
+    {
+      "people_count": 1,
+      "timestamp": "2026-01-15T08:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-15T09:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-15T10:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-15T11:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-15T12:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-15T13:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-15T14:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-15T15:00:00"
+    },
+    {
+      "people_count": 9,
+      "timestamp": "2026-01-15T16:00:00"
+    },
+    {
+      "people_count": 10,
+      "timestamp": "2026-01-15T17:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-16T08:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-16T09:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-16T10:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-16T11:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-16T12:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-16T13:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-16T14:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-17T08:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-17T09:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-17T10:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-17T11:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-17T12:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-17T13:00:00"
+    },
+    {
+      "people_count": 9,
+      "timestamp": "2026-01-17T14:00:00"
+    },
+    {
+      "people_count": 10,
+      "timestamp": "2026-01-17T15:00:00"
+    },
+    {
+      "people_count": 1,
+      "timestamp": "2026-01-18T08:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-18T09:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-18T10:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-18T11:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-18T12:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-18T13:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-18T14:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-18T15:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-19T08:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-19T09:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-19T10:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-19T11:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-19T11:23:37.000612"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-19T11:26:55.639801"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-19T11:39:11.892918"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-19T11:39:40.464254"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-19T11:44:48.522965"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-19T11:57:58.235143"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-19T12:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-19T13:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-19T14:00:00"
+    },
+    {
+      "people_count": 9,
+      "timestamp": "2026-01-19T15:00:00"
+    },
+    {
+      "people_count": 10,
+      "timestamp": "2026-01-19T16:00:00"
+    },
+    {
+      "people_count": 1,
+      "timestamp": "2026-01-20T08:00:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-20T08:30:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-20T09:00:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-20T09:30:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-20T10:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-20T10:30:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-20T11:00:00"
+    },
+    {
+      "people_count": 9,
+      "timestamp": "2026-01-20T11:30:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-20T14:00:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-20T14:30:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-20T15:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-20T15:30:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-20T16:00:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-20T16:30:00"
+    },
+    {
+      "people_count": 2,
+      "timestamp": "2026-01-21T08:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-21T08:15:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-21T08:30:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-21T09:00:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-21T09:20:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-21T09:45:00"
+    },
+    {
+      "people_count": 8,
+      "timestamp": "2026-01-21T10:00:00"
+    },
+    {
+      "people_count": 7,
+      "timestamp": "2026-01-21T10:15:00"
+    },
+    {
+      "people_count": 6,
+      "timestamp": "2026-01-21T10:30:00"
+    },
+    {
+      "people_count": 5,
+      "timestamp": "2026-01-21T10:45:00"
+    },
+    {
+      "people_count": 4,
+      "timestamp": "2026-01-21T11:00:00"
+    },
+    {
+      "people_count": 3,
+      "timestamp": "2026-01-21T11:15:00"
     }
-  },
-  "weekly": {
-    "14": {
-      "Mon": [],
-      "Tue": [],
-      "Wed": [
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.3,
-        0.7,
-        0.6,
-        0.7
-      ],
-      "Thu": [],
-      "Fri": [],
-      "Sat": [],
-      "Sun": []
-    }
-  }
+  ]
 }

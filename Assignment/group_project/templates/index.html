@@ -861,6 +861,7 @@
     const state = {
       connectedModules: { crowd_detection: [], environment: [], feedback: [] },
       latestModule5: null,
+      latestCrowdData: null,  // Store latest crowd data to merge fields
       msgCount: 0,
       mockActive: false,
       mockScenario: "normal",
@@ -996,6 +997,19 @@
           return;
         }
         
+        // Check if incoming data is empty/default (all zeros) and we already have valid data
+        const current = data.current || {};
+        const incomingPeopleCount = current.people_count || 0;
+        const incomingOccupancy = current.occupancy || 0;
+        const hasExistingData = state.latestModule5 && state.latestModule5.current;
+        const existingPeopleCount = hasExistingData ? (state.latestModule5.current.people_count || 0) : 0;
+        
+        // If incoming data is all zeros/empty and we have existing valid data, preserve existing data
+        if(incomingPeopleCount === 0 && incomingOccupancy === 0 && existingPeopleCount > 0 && !data.disconnected) {
+          console.log("Ignoring empty Module 5 update (preserving existing data with", existingPeopleCount, "people)");
+          return; // Don't update with empty data
+        }
+        
         console.log("Updating Module 5 preview with data:", data);
         state.latestModule5 = data;
         bumpMsg();
@@ -1011,7 +1025,7 @@
 
         document.getElementById("m5-court").textContent = data.court_id || courtId;
 
-        const current = data.current || {};
+        // current was already declared above, just use it
         const weather = data.weather || {};
         const info = data.info || {};
         const recommendations = data.recommendations || {};
@@ -1134,12 +1148,49 @@
       state.health.m1.source = src;
       state.health.m1.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
       setModuleStatus("m1-status", state.health.m1.mode, state.health.m1.mode === "mock" ? "simulated" : "data");
+      
+      // Merge with existing crowd data to preserve all fields
+      // This ensures level, confidence, and noise/volume are shown together
+      // Only update fields that are actually present in incoming data
+      let existingData = {};
+      if(state.latestCrowdData && state.latestCrowdData.data) {
+        existingData = { ...state.latestCrowdData.data };
+      }
+      
+      // Smart merge: only update fields that are explicitly present in incoming data
+      // If a field is not in incoming data, keep the existing value
+      // Start with existing data (preserves all previous fields)
+      const mergedData = { ...existingData };
+      
+      // Only update fields that are actually present in the incoming data object
+      // This ensures partial updates don't clear existing fields
+      // Example: If incoming data has only noise_db and motion_detected, 
+      //          we only update those two fields and keep people_count, crowd_level, confidence
+      if(d && typeof d === 'object' && Object.keys(d).length > 0) {
+        // List of fields we care about for Module 1
+        const fieldsToMerge = ['people_count', 'crowd_level', 'confidence', 'noise_db', 'motion_detected', 'proximity_triggered'];
+        
+        fieldsToMerge.forEach(key => {
+          // Only update if this field exists in incoming data AND has a value
+          if(key in d && d[key] !== null && d[key] !== undefined) {
+            mergedData[key] = d[key];
+          }
+          // If field not in incoming data, keep existing value (already in mergedData from existingData)
+        });
+      }
+      
+      // Store merged data for next update
+      state.latestCrowdData = {
+        ...data,
+        data: mergedData
+      };
+      
       const html = [
-        metricTile("People", d.people_count ?? 0, true),
-        metricTile("Level", (d.crowd_level || "—").toUpperCase(), false),
-        metricTile("Confidence", d.confidence != null ? `${Math.round(Number(d.confidence) * 100)}%` : "—", true),
-        metricTile("Noise", d.noise_db != null ? `${d.noise_db} dB` : "—", true),
-        metricTile("Motion", d.motion_detected ? "Yes" : "No", false)
+        metricTile("People", mergedData.people_count ?? 0, true),
+        metricTile("Level", (mergedData.crowd_level || "—").toUpperCase(), false),
+        metricTile("Confidence", mergedData.confidence != null ? `${Math.round(Number(mergedData.confidence) * 100)}%` : "—", true),
+        metricTile("Noise", mergedData.noise_db != null ? `${mergedData.noise_db} dB` : "—", true),
+        metricTile("Motion", mergedData.motion_detected ? "Yes" : "No", false)
       ].join("");
       const grid = document.getElementById("m1-grid");
       if(grid) {
@@ -1671,6 +1722,7 @@
           if(m1Grid) m1Grid.innerHTML = "";
           state.health.m1.mode = "idle";
           state.health.m1.lastSeen = 0;
+          state.latestCrowdData = null;  // Clear stored crowd data
           setModuleStatus("m1-status", "idle");
           log("Crowd data cleared");
           return;
@@ -1704,10 +1756,23 @@
           const imageContainer = document.getElementById("m1-image-container");
           const imageElement = document.getElementById("m1-image");
           if(imageContainer && imageElement) {
+            // Store video frame for analysis
+            currentVideoFrameBase64 = data.video_frame;
+            
             // Set image source from base64 data
             imageElement.src = "data:image/jpeg;base64," + data.video_frame;
             imageContainer.style.display = "block";
             console.log("✓ Video frame image displayed");
+            
+            // Enable analyze button when video frame is available
+            const analyzeBtn = document.getElementById("ai-analyze-btn");
+            if(analyzeBtn) {
+              analyzeBtn.disabled = false;
+              analyzeBtn.style.opacity = "1";
+              analyzeBtn.style.cursor = "pointer";
+              // Update image name display
+              document.getElementById("ai-image-name").textContent = "Video frame (ready to analyze)";
+            }
           }
         } catch(error) {
           console.error("Error displaying video frame image:", error);
@@ -1787,6 +1852,7 @@
     
     // AI Image Analysis Functions
     let selectedImageFile = null;
+    let currentVideoFrameBase64 = null; // Store current video frame for analysis
     
     function handleImageSelect(event) {
       const file = event.target.files[0];
@@ -1820,8 +1886,32 @@
     }
     
     async function analyzeImage() {
-      if(!selectedImageFile) {
-        alert("Please select an image first");
+      // Check if we have a video frame or uploaded file
+      let imageToAnalyze = null;
+      let imageSource = null;
+      
+      if(currentVideoFrameBase64) {
+        // Convert base64 video frame to Blob
+        try {
+          const base64Data = currentVideoFrameBase64;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for(let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          imageToAnalyze = new Blob([byteArray], {type: 'image/jpeg'});
+          imageSource = "video_frame";
+        } catch(error) {
+          console.error("Error converting video frame to blob:", error);
+          alert("Error processing video frame. Please try again.");
+          return;
+        }
+      } else if(selectedImageFile) {
+        imageToAnalyze = selectedImageFile;
+        imageSource = "uploaded";
+      } else {
+        alert("Please select an image or wait for a video frame");
         return;
       }
       
@@ -1839,7 +1929,10 @@
       
       try {
         const formData = new FormData();
-        formData.append('image', selectedImageFile);
+        // Create a File object from the Blob for FormData
+        const fileName = imageSource === "video_frame" ? "video_frame.jpg" : imageToAnalyze.name;
+        const file = imageToAnalyze instanceof File ? imageToAnalyze : new File([imageToAnalyze], fileName, {type: 'image/jpeg'});
+        formData.append('image', file);
         
         const response = await fetch('/api/analyze_image', {
           method: 'POST',
@@ -1849,40 +1942,15 @@
         const data = await response.json();
         
         if(data.success && data.result) {
+          // Use shared function to display results
+          displayAnalysisResults(data);
+          
           const result = data.result;
           const count = data.people_count !== undefined ? data.people_count : (result.count || 0);
           const confidence = data.confidence !== undefined ? data.confidence : (result.confidence || 0.85);
           const confidencePercent = (confidence * 100).toFixed(0);
-          const details = result.details || "No description";
           const crowdLevel = data.crowd_level || result.crowd_level || "unknown";
           const module5Sent = data.module5_sent || false;
-          
-          resultDiv.innerHTML = `
-            <div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
-                <div style="font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;">Analysis Results</div>
-                ${module5Sent ? '<div style="font-size: 11px; color: var(--success); font-weight: 500;">✓ Sent to Module 5</div>' : ''}
-              </div>
-              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s16); margin-bottom: var(--s16);">
-                <div>
-                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">People Count</div>
-                  <div style="font-size: 24px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.2;">${count}</div>
-                </div>
-                <div>
-                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Confidence</div>
-                  <div style="font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: 1.2;">${confidencePercent}%</div>
-                </div>
-                <div style="grid-column: 1 / -1;">
-                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Crowd Level</div>
-                  <div style="font-size: 13px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.02em;">${crowdLevel}</div>
-                </div>
-                <div style="grid-column: 1 / -1; padding-top: var(--s12); border-top: 1px solid var(--borderSubtle);">
-                  <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s8); font-weight: 500;">Details</div>
-                  <div style="font-size: 13px; color: var(--text); line-height: 1.5;">${details}</div>
-                </div>
-              </div>
-            </div>
-          `;
           
           log(`AI Analysis: ${count} people detected (${crowdLevel}, ${confidencePercent}% confidence)${module5Sent ? ' - Sent to Module 5' : ''}`);
         } else {
@@ -1902,12 +1970,65 @@
     }
     
     // Listen for AI analysis results via SocketIO
+    // Shared function to display analysis results
+    function displayAnalysisResults(data) {
+      const resultDiv = document.getElementById("ai-analysis-result");
+      if(!resultDiv) return;
+      
+      const result = data.result || data;
+      const count = data.people_count !== undefined ? data.people_count : (result.count || 0);
+      const confidence = data.confidence !== undefined ? data.confidence : (result.confidence || 0.85);
+      const confidencePercent = (confidence * 100).toFixed(0);
+      const details = result.details || "No description";
+      const crowdLevel = data.crowd_level || result.crowd_level || "unknown";
+      const module5Sent = data.module5_sent || false;
+      
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = `
+        <div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
+            <div style="font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;">Analysis Results</div>
+            ${module5Sent ? '<div style="font-size: 11px; color: var(--success); font-weight: 500;">✓ Sent to Module 5</div>' : ''}
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s16); margin-bottom: var(--s16);">
+            <div>
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">People Count</div>
+              <div style="font-size: 24px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.2;">${count}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Confidence</div>
+              <div style="font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: 1.2;">${confidencePercent}%</div>
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Crowd Level</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.02em;">${crowdLevel}</div>
+            </div>
+            <div style="grid-column: 1 / -1; padding-top: var(--s12); border-top: 1px solid var(--borderSubtle);">
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s8); font-weight: 500;">Details</div>
+              <div style="font-size: 13px; color: var(--text); line-height: 1.5;">${details}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
     socket.on("ai_analysis_result", (data) => {
       console.log("AI analysis result received:", data);
-      if(data.result) {
-        const result = data.result;
-        log(`AI Analysis complete: ${result.count} people detected`);
-        // Could update the crowd data display here if needed
+      if(data.result || data.people_count !== undefined) {
+        const result = data.result || data;
+        log(`AI Analysis complete: ${result.count || data.people_count || 0} people detected (broadcast from another dashboard)`);
+        
+        // Update analysis results display on all dashboards
+        displayAnalysisResults(data);
+        
+        // Reset analyze button state
+        const analyzeBtn = document.getElementById("ai-analyze-btn");
+        if(analyzeBtn) {
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = "Analyze";
+          analyzeBtn.style.opacity = "1";
+          analyzeBtn.style.cursor = "pointer";
+        }
       }
     });
 

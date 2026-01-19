@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import eventlet
 from eventlet import wsgi
 from flask_socketio import SocketIO, emit
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import random
 import threading
@@ -80,23 +80,47 @@ socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
 
 def load_history():
-    """Load historical data from JSON file"""
+    """Load historical data from JSON file - now stores raw entries with people_count and timestamp"""
     try:
         if os.path.exists(HISTORY_FILE):
             with open(HISTORY_FILE, 'r') as f:
                 data = json.load(f)
-                # Convert weekly dict keys back to int if needed (JSON stores keys as strings)
-                if 'weekly' in data:
-                    weekly_fixed = {}
-                    for hour_str, days in data['weekly'].items():
-                        weekly_fixed[int(hour_str)] = days
-                    data['weekly'] = weekly_fixed
-                # Convert hourly hour keys to int if needed
-                if 'hourly' in data:
-                    hourly_fixed = {}
-                    for date_str, hours in data['hourly'].items():
-                        hourly_fixed[date_str] = {int(h): v for h, v in hours.items()}
-                    data['hourly'] = hourly_fixed
+                # New format: {"entries": [{"people_count": 5, "timestamp": "..."}, ...]}
+                if 'entries' in data:
+                    return data
+                # Legacy format migration: convert old format to new format
+                elif 'hourly' in data or 'weekly' in data:
+                    print("[INFO] Migrating legacy history format to new format")
+                    entries = []
+                    # Convert old hourly data
+                    if 'hourly' in data:
+                        for date_str, hours in data['hourly'].items():
+                            for hour_str, occupancy in hours.items():
+                                hour = int(hour_str)
+                                people_count = int(occupancy * 10)  # Approximate conversion
+                                timestamp_str = f"{date_str}T{hour:02d}:00:00"
+                                entries.append({
+                                    'people_count': people_count,
+                                    'timestamp': timestamp_str
+                                })
+                    # Convert old weekly data
+                    if 'weekly' in data:
+                        for hour_str, days in data['weekly'].items():
+                            hour = int(hour_str)
+                            for day_name, occupancies in days.items():
+                                for occupancy in occupancies:
+                                    # Approximate date (use recent Monday as base)
+                                    today = datetime.now()
+                                    days_offset = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].index(day_name)
+                                    base_date = today - timedelta(days=(today.weekday() + 7 - days_offset) % 7)
+                                    date_str = base_date.strftime('%Y-%m-%d')
+                                    people_count = int(occupancy * 10)
+                                    timestamp_str = f"{date_str}T{hour:02d}:00:00"
+                                    entries.append({
+                                        'people_count': people_count,
+                                        'timestamp': timestamp_str
+                                    })
+                    return {'entries': entries}
                 return data
     except Exception as e:
         print(f"[WARNING] Could not load history file: {e}")
@@ -105,109 +129,143 @@ def load_history():
     
     # Return default structure if file doesn't exist or error
     return {
-        'hourly': {},  # {date: {hour: occupancy}}
-        'weekly': {}  # {hour: {day: [occupancy_values]}}
+        'entries': []  # List of {"people_count": int, "timestamp": "ISO string"}
     }
 
 def save_history(history_data):
-    """Save historical data to JSON file"""
+    """Save historical data to JSON file - stores raw entries with people_count and timestamp"""
     try:
-        # Convert to serializable format
-        history_to_save = {
-            'hourly': history_data['hourly'],
-            'weekly': {str(k): v for k, v in history_data['weekly'].items()}
-        }
+        # Keep only entries from last 30 days to prevent file from growing too large
+        if 'entries' in history_data:
+            cutoff_date = datetime.now() - timedelta(days=30)
+            cutoff_str = cutoff_date.isoformat()
+            history_data['entries'] = [
+                e for e in history_data['entries'] 
+                if e.get('timestamp', '') >= cutoff_str
+            ]
+            # Sort by timestamp
+            history_data['entries'].sort(key=lambda x: x.get('timestamp', ''))
+        
         with open(HISTORY_FILE, 'w') as f:
-            json.dump(history_to_save, f, indent=2)
+            json.dump(history_data, f, indent=2)
     except Exception as e:
         print(f"[WARNING] Could not save history file: {e}")
 
-def update_history(occupancy, timestamp=None):
-    """Update historical data with new occupancy reading"""
+def update_history(people_count, timestamp=None):
+    """Update historical data with new people count reading"""
     if timestamp is None:
         timestamp = datetime.now()
     
     history = load_history()
-    date_str = timestamp.strftime('%Y-%m-%d')
-    hour = timestamp.hour
-    day_name = timestamp.strftime('%a')  # Mon, Tue, Wed, etc.
+    if 'entries' not in history:
+        history['entries'] = []
     
-    # Update hourly data for today
-    if date_str not in history['hourly']:
-        history['hourly'][date_str] = {}
-    history['hourly'][date_str][hour] = occupancy
+    timestamp_str = timestamp.isoformat()
     
-    # Update weekly pattern (same time, different days)
-    if hour not in history['weekly']:
-        history['weekly'][hour] = {'Mon': [], 'Tue': [], 'Wed': [], 'Thu': [], 'Fri': [], 'Sat': [], 'Sun': []}
-    
-    # Add to weekly data for this day/hour (keep last 30 entries per day/hour)
-    # Only add if occupancy changed significantly (> 0.05) to avoid duplicate entries
-    day_data = history['weekly'][hour][day_name]
-    
-    # Check if we should add this reading (avoid duplicates from polling)
-    should_add = (
-        len(day_data) == 0 or  # First reading
-        abs(day_data[-1] - occupancy) > 0.05 or  # Significant change (>5%)
-        (len(day_data) < 5)  # Always keep at least 5 readings for averaging
-    )
+    # Check if we should add this reading (avoid duplicates from rapid polling)
+    # Only add if people_count changed by at least 1, or if last entry is more than 5 minutes old
+    should_add = True
+    if len(history['entries']) > 0:
+        last_entry = history['entries'][-1]
+        last_timestamp = datetime.fromisoformat(last_entry.get('timestamp', ''))
+        time_diff = (timestamp - last_timestamp).total_seconds()
+        people_diff = abs(last_entry.get('people_count', 0) - people_count)
+        
+        # Add if significant change (>1 person) or if enough time has passed (>5 minutes)
+        should_add = people_diff >= 1 or time_diff >= 300
     
     if should_add:
-        day_data.append(occupancy)
-        # Keep last 30 entries per day/hour
-        if len(day_data) > 30:
-            day_data.pop(0)
+        history['entries'].append({
+            'people_count': int(people_count),
+            'timestamp': timestamp_str
+        })
     
     save_history(history)
     return history
 
-def get_today_hourly_pattern(history, current_hour, current_occupancy):
-    """Get hourly pattern for today from history - ONLY measured data, no projections"""
+def get_today_hourly_pattern(history, current_hour, current_people_count, capacity=10):
+    """Calculate hourly pattern for today from raw history entries - server-side calculation"""
     date_str = datetime.now().strftime('%Y-%m-%d')
     today_hourly = []
     
+    # Get all entries for today
+    today_entries = []
+    if 'entries' in history:
+        for entry in history['entries']:
+            entry_timestamp = entry.get('timestamp', '')
+            if entry_timestamp.startswith(date_str):
+                try:
+                    entry_dt = datetime.fromisoformat(entry_timestamp)
+                    today_entries.append({
+                        'hour': entry_dt.hour,
+                        'people_count': entry.get('people_count', 0)
+                    })
+                except:
+                    continue
+    
+    # Calculate average people count per hour for today
     for hour in range(8, 22):  # 8 AM to 10 PM
         if hour < current_hour:
-            # Past hours: ONLY use historical data if available (measured data only)
-            if date_str in history['hourly'] and hour in history['hourly'][date_str]:
-                occupancy = history['hourly'][date_str][hour]
-                today_hourly.append({'hour': hour, 'occupancy': min(1.0, max(0.0, occupancy))})
-            # If no data, skip this hour (don't show estimates)
+            # Past hours: calculate average from entries in this hour
+            hour_entries = [e for e in today_entries if e['hour'] == hour]
+            if hour_entries:
+                avg_people = sum(e['people_count'] for e in hour_entries) / len(hour_entries)
+                occupancy = min(1.0, max(0.0, avg_people / capacity))
+                today_hourly.append({'hour': hour, 'occupancy': occupancy, 'people_count': int(avg_people)})
+            # If no data, skip this hour
         elif hour == current_hour:
-            # Current hour: use actual current occupancy (measured)
-            today_hourly.append({'hour': hour, 'occupancy': current_occupancy})
+            # Current hour: use actual current people count
+            occupancy = min(1.0, max(0.0, current_people_count / capacity))
+            today_hourly.append({'hour': hour, 'occupancy': occupancy, 'people_count': current_people_count})
         else:
             # Future hours: skip (don't show projections)
             pass
     
     return today_hourly
 
-def get_weekly_pattern(history, current_hour, current_occupancy):
-    """Get weekly pattern for same time across different days - ONLY measured data, no projections"""
+def get_weekly_pattern(history, current_hour, current_people_count, capacity=10):
+    """Calculate weekly pattern for same time across different days from raw history - server-side calculation"""
     week_same_time = []
     days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     
-    if current_hour in history['weekly']:
-        for day in days:
-            day_data = history['weekly'][current_hour][day]
-            if day_data and len(day_data) > 0:
-                # Use average occupancy for this day/hour (measured data only)
-                avg_occupancy = sum(day_data) / len(day_data)
-                week_same_time.append({'day': day, 'occupancy': min(1.0, max(0.0, avg_occupancy))})
-            else:
-                # No data for this day - add with null/None occupancy so graph skips it
-                # This maintains day order alignment with graph labels
-                week_same_time.append({'day': day, 'occupancy': None})
-    else:
-        # No historical data at all - return all days with None to maintain alignment
-        for day in days:
-            week_same_time.append({'day': day, 'occupancy': None})
+    # Get all entries for the current hour across all days
+    hour_entries_by_day = {day: [] for day in days}
+    
+    if 'entries' in history:
+        for entry in history['entries']:
+            entry_timestamp = entry.get('timestamp', '')
+            try:
+                entry_dt = datetime.fromisoformat(entry_timestamp)
+                if entry_dt.hour == current_hour:
+                    # Get day name (0=Monday, 6=Sunday)
+                    day_index = entry_dt.weekday()
+                    day_name = days[day_index]
+                    hour_entries_by_day[day_name].append(entry.get('people_count', 0))
+            except:
+                continue
+    
+    # Calculate average for each day
+    for day in days:
+        day_entries = hour_entries_by_day[day]
+        if day_entries and len(day_entries) > 0:
+            avg_people = sum(day_entries) / len(day_entries)
+            occupancy = min(1.0, max(0.0, avg_people / capacity))
+            week_same_time.append({
+                'day': day, 
+                'occupancy': occupancy,
+                'people_count': int(avg_people)
+            })
+        else:
+            # No data for this day - add with null/None occupancy so graph skips it
+            week_same_time.append({'day': day, 'occupancy': None, 'people_count': None})
     
     return week_same_time
 
 # Initialize history on startup
 historical_data = load_history()
-print(f"[INFO] Historical data loaded: {len(historical_data['hourly'])} days, {len(historical_data['weekly'])} hours tracked")
+entry_count = len(historical_data.get('entries', []))
+print(f"[INFO] Historical data loaded: {entry_count} entries tracked")
 
 # --- Data Storage ---
 connected_modules = {
@@ -478,15 +536,16 @@ def analyze_image():
                     },
                     {
                         'type': 'text',
-                        'text': '''Count people in this basketball court image. 
+                        'text': '''Count the number of people visible in this image, regardless of the scene type (basketball court, meeting room, study space, etc.). 
+                        Always return a people count even if the scene is not a basketball court.
                         Analyze the scene and return ONLY valid JSON in this exact format:
                         {
                             "count": <number>,
-                            "details": "<brief description>",
+                            "details": "<brief description of scene and people>",
                             "crowd_level": "<empty|light|normal|busy|full>",
                             "confidence": <0.0-1.0>
                         }
-                        Do not include any markdown formatting or code blocks.'''
+                        Do not include any markdown formatting or code blocks. Always provide a count value, even if the scene type doesn't match expectations.'''
                     }
                 ],
             }],
@@ -497,16 +556,63 @@ def analyze_image():
         # Remove markdown code blocks if present
         response_text = response_text.replace('```json', '').replace('```', '').strip()
         
+        # Check if response contains error about scene type but try to extract count anyway
+        scene_type_warning = False
+        if 'not a basketball court' in response_text.lower() or 'basketball court' in response_text.lower():
+            scene_type_warning = True
+            print(f"[{datetime.now()}] Warning: Scene type mismatch detected, but attempting to extract people count anyway")
+        
         try:
             result = json.loads(response_text)
         except json.JSONDecodeError:
-            # Try to extract JSON from response
+            # Try to extract JSON from response (handle cases where Claude adds text before/after JSON)
             import re
-            json_match = re.search(r'\{[^}]+\}', response_text)
+            # Try to find JSON object in response (more robust pattern)
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
             if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise ValueError(f"Could not parse JSON from response: {response_text[:200]}")
+                try:
+                    result = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    # If still fails, try to extract just the count number
+                    count_match = re.search(r'"count"\s*:\s*(\d+)', response_text)
+                    if count_match:
+                        people_count = int(count_match.group(1))
+                        result = {
+                            'count': people_count,
+                            'details': response_text[:100] if len(response_text) > 100 else response_text,
+                            'crowd_level': 'normal',
+                            'confidence': 0.7
+                        }
+                        print(f"[{datetime.now()}] Extracted people count from text response: {people_count}")
+                    else:
+                        raise ValueError(f"Could not parse JSON from response: {response_text[:200]}")
+                else:
+                    # Last resort: try to extract just the count number from various patterns
+                    count_match = re.search(r'"count"\s*:\s*(\d+)', response_text)
+                    if not count_match:
+                        # Try other patterns: "count": 5, count: 5, "people": 5, etc.
+                        count_match = re.search(r'(?:count|people|people_count|number_of_people)"?\s*:?\s*(\d+)', response_text, re.IGNORECASE)
+                    if not count_match:
+                        # Try to find any number that might be a count (look for numbers near "people" or "person")
+                        count_match = re.search(r'(?:people|person|individuals?)\D+(\d+)', response_text, re.IGNORECASE)
+                    if count_match:
+                        people_count = int(count_match.group(1))
+                        result = {
+                            'count': people_count,
+                            'details': response_text[:200] if len(response_text) > 200 else response_text,
+                            'crowd_level': 'normal' if people_count > 0 else 'empty',
+                            'confidence': 0.6  # Lower confidence since we had to extract from text
+                        }
+                        print(f"[{datetime.now()}] Extracted people count from text response: {people_count}")
+                    else:
+                        # Final fallback: return 0 with warning
+                        print(f"[{datetime.now()}] WARNING: Could not extract people count from response: {response_text[:300]}")
+                        result = {
+                            'count': 0,
+                            'details': f"Could not parse response. Original: {response_text[:200]}",
+                            'crowd_level': 'empty',
+                            'confidence': 0.0
+                        }
         
         print(f"[{datetime.now()}] AI Analysis result: {result}")
         
@@ -541,55 +647,51 @@ def analyze_image():
                 'crowd_level': crowd_level,
                 'confidence': confidence,
                 'source': 'ai_image_analysis'
-            }
+            },
+            '_ai_analysis': True,  # Flag to mark this as AI analysis data
+            '_ai_timestamp': datetime.now().isoformat()  # Store timestamp for comparison
         }
         
         # Update current_data with AI analysis results
         current_data['crowd'] = crowd_data
         
-        # Update historical data with AI analysis result
-        occupancy = min(1.0, people_count / 10.0)
+        # Update historical data with AI analysis result (save people_count, not occupancy)
         global historical_data
-        historical_data = update_history(occupancy)
+        historical_data = update_history(people_count)
         
-        # Get historical patterns for graphs
+        # Get historical patterns for graphs (calculated server-side from raw data)
         current_hour = datetime.now().hour
-        today_hourly = get_today_hourly_pattern(historical_data, current_hour, occupancy)
-        week_same_time = get_weekly_pattern(historical_data, current_hour, occupancy)
+        capacity = 10  # Default capacity
+        today_hourly = get_today_hourly_pattern(historical_data, current_hour, people_count, capacity)
+        week_same_time = get_weekly_pattern(historical_data, current_hour, people_count, capacity)
         
-        # Send ONLY Module 1 (crowd) data to Module 5 as partial update
-        # This allows Module 5 to update occupancy without requiring all modules
-        partial_module5_data = {
-            'court_id': 'basketball_a',
-            'timestamp': datetime.now().isoformat(),
-            'current': {
-                'occupancy': occupancy,
-                'people_count': people_count,
-                'crowd_level': crowd_level,
-                'estimated_wait_min': {
-                    'empty': 0,
-                    'light': 5,
-                    'normal': 10,
-                    'busy': 20,
-                    'full': 30
-                }.get(crowd_level, 10),
-                'confidence': confidence,
-                'last_update': 'Just now',
-                'source': 'ai_image_analysis'
-            },
-            'patterns': {
-                'today_hourly': today_hourly,
-                'week_same_time': week_same_time
-            }
-        }
+        # Generate complete Module 5 data for preview (merge with existing data if available)
+        # Use generate_module5_from_modules to ensure complete data structure
+        complete_module5_data = generate_module5_from_modules(
+            court_id='basketball_a',
+            crowd_data=crowd_data,  # Use the AI analysis crowd data
+            env_data=current_data.get('environment'),  # Include existing environment data if available
+            feedback_data=current_data.get('feedback') if current_data.get('feedback') else None
+        )
         
-        # Emit partial Module 5 update (only crowd/occupancy data)
-        socketio.emit('DisplayUpdate', partial_module5_data)
+        # Override the current section with AI analysis data to ensure it's displayed
+        complete_module5_data['current'].update({
+            'people_count': people_count,
+            'crowd_level': crowd_level,
+            'confidence': confidence,
+            'last_update': 'Just now',
+            'source': 'ai_image_analysis'
+        })
+        
+        # Emit complete Module 5 update (includes all sections for preview)
+        socketio.emit('DisplayUpdate', complete_module5_data)
         
         # Also emit to dashboard for preview
         socketio.emit('crowd_update', crowd_data)
         
-        print(f"[{datetime.now()}] Sent AI analysis to Module 5 (partial update): {people_count} people, {confidence:.2%} confidence, occupancy: {partial_module5_data['current']['occupancy']:.1%}")
+        # Calculate occupancy for logging
+        occupancy = complete_module5_data.get('current', {}).get('occupancy', min(1.0, people_count / 10.0))
+        print(f"[{datetime.now()}] Sent AI analysis to Module 5: {people_count} people, {confidence:.2%} confidence, occupancy: {occupancy:.1%}")
         
         # Emit result via SocketIO for real-time dashboard update
         socketio.emit('ai_analysis_result', {
@@ -687,8 +789,9 @@ def handle_crowd_data(data):
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()
+        # Save people_count to history, not occupancy
         global historical_data
-        historical_data = update_history(occupancy, timestamp)
+        historical_data = update_history(people_count, timestamp)
     
     socketio.emit('crowd_update', data)
     
@@ -700,7 +803,21 @@ def handle_crowd_data(data):
         env_data=current_data['environment'],
         feedback_data=current_data['feedback'] if current_data['feedback'] else None
     )
+    
+    # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
+    connected_display_count = len(connected_modules['display'])
+    print(f"[{datetime.now()}] Broadcasting DisplayUpdate from Module 1 to all clients ({connected_display_count} Module 5 displays connected)")
     socketio.emit('DisplayUpdate', module5_data)
+    
+    # Also send directly to registered display module sockets if any
+    if display_module_sockets:
+        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
+        for socket_id, module_id in display_module_sockets.items():
+            try:
+                socketio.emit('DisplayUpdate', module5_data, room=socket_id)
+            except Exception as e:
+                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
+    
     print(f"[{datetime.now()}] Module 5 data generated from Module 1 data and sent to dashboard")
 
 @socketio.on('CrowdVideoFrameEvent')
@@ -722,15 +839,86 @@ def handle_crowd_video(data):
             'timestamp': datetime.now().isoformat()
         })
     
-    # Update current data if video frame includes crowd data
-    if 'data' in data and data['data']:
-        # Merge video frame data with existing crowd data
-        if current_data['crowd']:
-            current_data['crowd'].update(data)
-        else:
-            current_data['crowd'] = data
+    # Extract video_frame from nested data structure and put it at top level
+    # Client sends: {'module_id': ..., 'data': {'video_frame': '...', ...}}
+    # Frontend expects: {'module_id': ..., 'video_frame': '...', 'data': {...}}
+    video_frame_data = data.copy()
+    if 'data' in data and isinstance(data['data'], dict):
+        # Extract video_frame from nested data if it exists
+        if 'video_frame' in data['data']:
+            video_frame_data['video_frame'] = data['data']['video_frame']
+            print(f"[{datetime.now()}] Extracted video frame ({len(data['data']['video_frame'])} bytes) from nested data")
     
-    socketio.emit('crowd_video_update', data)
+    # Update current data if video frame includes crowd data
+    # But preserve AI analysis data if it's recent and Module 1 data is empty/old
+    if 'data' in data and data['data']:
+        incoming_people_count = data.get('data', {}).get('people_count', 0)
+        
+        # Check if we have AI analysis data that should be preserved
+        existing_crowd = current_data.get('crowd')
+        is_ai_analysis = existing_crowd and existing_crowd.get('_ai_analysis', False)
+        
+        if is_ai_analysis:
+            # Check how old the AI analysis is
+            ai_timestamp = existing_crowd.get('_ai_timestamp')
+            if isinstance(ai_timestamp, str):
+                try:
+                    ai_timestamp = datetime.fromisoformat(ai_timestamp.replace('Z', '+00:00'))
+                except:
+                    ai_timestamp = datetime.now()
+            elif not isinstance(ai_timestamp, datetime):
+                # Try to get from timestamp field
+                timestamp_str = existing_crowd.get('timestamp')
+                if timestamp_str:
+                    try:
+                        ai_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    except:
+                        ai_timestamp = datetime.now()
+                else:
+                    ai_timestamp = datetime.now()
+            
+            # Calculate time difference (handle timezone-aware datetimes)
+            now = datetime.now()
+            if ai_timestamp.tzinfo:
+                now = datetime.now(ai_timestamp.tzinfo)
+            time_since_ai = (now - ai_timestamp).total_seconds()
+            
+            # Preserve AI analysis if:
+            # 1. It's less than 30 seconds old, AND
+            # 2. Incoming Module 1 data has 0 people (empty/old data)
+            if time_since_ai < 30 and incoming_people_count == 0:
+                ai_people_count = existing_crowd.get('data', {}).get('people_count', 0)
+                print(f"[{datetime.now()}] Preserving AI analysis data (people_count={ai_people_count}, {time_since_ai:.1f}s old) over Module 1 empty data")
+                # Don't overwrite, but still emit the video frame for display
+            else:
+                # AI analysis is old or Module 1 has valid data - update normally
+                if current_data['crowd']:
+                    current_data['crowd'].update(data)
+                else:
+                    current_data['crowd'] = data
+        else:
+            # No AI analysis to preserve - update normally
+            if current_data['crowd']:
+                current_data['crowd'].update(data)
+            else:
+                current_data['crowd'] = data
+    
+    # Emit with video_frame at top level for frontend
+    socketio.emit('crowd_video_update', video_frame_data)
+    
+    # Generate and send Module 5 data based on current Modules 1-3 data
+    # This ensures Module 5 gets updated when video frame data arrives
+    if 'data' in data and data['data']:
+        court_id = data.get('court_id', 'basketball_a')
+        # Use current crowd data (which may have been updated above)
+        module5_data = generate_module5_from_modules(
+            court_id=court_id,
+            crowd_data=current_data.get('crowd'),
+            env_data=current_data.get('environment'),
+            feedback_data=current_data['feedback'] if current_data['feedback'] else None
+        )
+        socketio.emit('DisplayUpdate', module5_data)
+        print(f"[{datetime.now()}] Module 5 data generated from Module 1 video frame and sent to dashboard")
 
 # --- MODULE 2: ENVIRONMENT DATA ---
 @socketio.on('EnvironmentDataEvent')
@@ -748,7 +936,21 @@ def handle_environment_data(data):
         env_data=data,
         feedback_data=current_data['feedback'] if current_data['feedback'] else None
     )
+    
+    # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
+    connected_display_count = len(connected_modules['display'])
+    print(f"[{datetime.now()}] Broadcasting DisplayUpdate from Module 2 to all clients ({connected_display_count} Module 5 displays connected)")
     socketio.emit('DisplayUpdate', module5_data)
+    
+    # Also send directly to registered display module sockets if any
+    if display_module_sockets:
+        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
+        for socket_id, module_id in display_module_sockets.items():
+            try:
+                socketio.emit('DisplayUpdate', module5_data, room=socket_id)
+            except Exception as e:
+                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
+    
     print(f"[{datetime.now()}] Module 5 data generated from Module 2 data and sent to dashboard")
 
 # --- MODULE 3: FEEDBACK DATA ---
@@ -828,13 +1030,13 @@ def handle_feedback_data(data):
 def handle_usage(data):
     """Legacy: Receive Rep Count from BeagleBone"""
     print(f"[{datetime.now()}] Received Usage Data: {data}")
-    emit('update_bar_graph', data, broadcast=True)
+    emit('update_bar_graph', data)
 
 @socketio.on('volume_data')
 def handle_volume(data):
     """Legacy: Receive Volume status from BeagleBone"""
     print(f"[{datetime.now()}] Received Volume Alert: {data}")
-    emit('trigger_alert', data, broadcast=True)
+    emit('trigger_alert', data)
 
 # --- Helper function for deep merging nested dictionaries ---
 def deep_merge(base_dict, override_dict):
@@ -901,16 +1103,17 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
     
     occupancy = min(1.0, people_count / 10.0)
     current_hour = datetime.now().hour
+    capacity = 10  # Default capacity
     
     # Load historical data (don't update here - only update when NEW data arrives)
     global historical_data
     historical_data = load_history()
     
-    # Get hourly pattern from actual historical data
-    today_hourly = get_today_hourly_pattern(historical_data, current_hour, occupancy)
+    # Get hourly pattern from actual historical data (calculated server-side)
+    today_hourly = get_today_hourly_pattern(historical_data, current_hour, people_count, capacity)
     
-    # Get weekly pattern from actual historical data
-    week_same_time = get_weekly_pattern(historical_data, current_hour, occupancy)
+    # Get weekly pattern from actual historical data (calculated server-side)
+    week_same_time = get_weekly_pattern(historical_data, current_hour, people_count, capacity)
     
     # Generate alternatives (fewer if current court is busy)
     num_alternatives = 2 if occupancy < 0.7 else 3
@@ -1196,8 +1399,18 @@ def handle_send_test_data_module5(data):
     test_data = generate_module5_test_data(court_id, test_scenario, custom_data)
     
     # Send to Module 5 displays via DisplayUpdate event
-    # Note: socketio.emit() broadcasts by default (no 'to' parameter means all clients)
+    connected_display_count = len(connected_modules['display'])
+    print(f"[{datetime.now()}] Broadcasting DisplayUpdate test data to all clients ({connected_display_count} Module 5 displays connected)")
     socketio.emit('DisplayUpdate', test_data)
+    
+    # Also send directly to registered display module sockets if any
+    if display_module_sockets:
+        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
+        for socket_id, module_id in display_module_sockets.items():
+            try:
+                socketio.emit('DisplayUpdate', test_data, room=socket_id)
+            except Exception as e:
+                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
     
     # Notify dashboard of successful send
     socketio.emit('test_data_sent', {
@@ -1374,7 +1587,20 @@ def handle_send_mock_data_once(data=None):
         env_data=env_data,
         feedback_data=current_data['feedback'] if current_data['feedback'] else None
     )
+    
+    # Emit DisplayUpdate to all clients
+    connected_display_count = len(connected_modules['display'])
+    print(f"[{datetime.now()}] Broadcasting DisplayUpdate to all clients ({connected_display_count} Module 5 displays connected)")
     socketio.emit('DisplayUpdate', module5_data)
+    
+    # Also send directly to registered display module sockets if any
+    if display_module_sockets:
+        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
+        for socket_id, module_id in display_module_sockets.items():
+            try:
+                socketio.emit('DisplayUpdate', module5_data, room=socket_id)
+            except Exception as e:
+                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
     
     print(f"[{datetime.now()}] Mock data sent for all 3 modules and Module 5")
     

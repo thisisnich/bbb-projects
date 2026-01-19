@@ -36,76 +36,47 @@ OLED_UPDATE_DEBOUNCE_MS = 100  # Minimum time between OLED updates (100ms)
 oled_update_lock = threading.Lock()  # Lock to prevent concurrent OLED updates
 
 # ========== HARDWARE IMPORTS ==========
-# Import OLED library (from MyFirstPythonProject) - same pattern as WebServer.py
+# OLED - Direct initialization (same as module1, no QR code)
 try:
-    import os
-    import sys
-    
-    # Find MyFirstPythonProject directory
-    # File is at: /var/lib/cloud9/Assignment/module5/Module5_Display_Client.py
-    # Need: /var/lib/cloud9/MyFirstPythonProject/oled.py
-    current_file = os.path.abspath(__file__)
-    # Go: module5/ -> Assignment/ -> cloud9/ -> MyFirstPythonProject/
-    assignment_dir = os.path.dirname(os.path.dirname(current_file))  # /var/lib/cloud9/Assignment
-    cloud9_dir = os.path.dirname(assignment_dir)  # /var/lib/cloud9
-    myproject_dir = os.path.join(cloud9_dir, 'MyFirstPythonProject')  # /var/lib/cloud9/MyFirstPythonProject
-    
-    # Use oled.py (Adafruit CircuitPython version) - works reliably
-    oled_file = os.path.join(myproject_dir, 'oled.py')
-    simple_oled_file = os.path.join(myproject_dir, 'oled_simple.py')
-    
-    if os.path.exists(oled_file):
-        sys.path.insert(0, myproject_dir)
-        from oled import OledDisplay
-        OLED_AVAILABLE = True
-        print(f"[OLED] OLED library found (Adafruit CircuitPython) at {oled_file}")
-    elif os.path.exists(simple_oled_file):
-        sys.path.insert(0, myproject_dir)
-        from oled_simple import OledDisplay
-        OLED_AVAILABLE = True
-        print(f"[OLED] OLED library found (simple version, fallback) at {simple_oled_file}")
-    else:
-        # Try alternative: if MyFirstPythonProject is inside Assignment
-        alt_oled = os.path.join(assignment_dir, 'MyFirstPythonProject', 'oled.py')
-        alt_simple = os.path.join(assignment_dir, 'MyFirstPythonProject', 'oled_simple.py')
-        
-        if os.path.exists(alt_oled):
-            sys.path.insert(0, os.path.join(assignment_dir, 'MyFirstPythonProject'))
-            from oled import OledDisplay
-            OLED_AVAILABLE = True
-            print(f"[OLED] OLED library found (Adafruit CircuitPython) at {alt_oled}")
-        elif os.path.exists(alt_simple):
-            sys.path.insert(0, os.path.join(assignment_dir, 'MyFirstPythonProject'))
-            from oled_simple import OledDisplay
-            OLED_AVAILABLE = True
-            print(f"[OLED] OLED library found (simple version, fallback) at {alt_simple}")
-        else:
-            print(f"[WARNING] OLED library not found")
-            print(f"[WARNING] Tried: {oled_file}")
-            print(f"[WARNING] Tried: {simple_oled_file}")
-            print(f"[WARNING] Tried: {alt_oled}")
-            print(f"[WARNING] Tried: {alt_simple}")
-            OLED_AVAILABLE = False
-            OledDisplay = None
+    import board
+    import busio
+    import digitalio
+    import adafruit_ssd1306
+    from board import SCL, SDA
+    from PIL import Image, ImageDraw, ImageFont
+    OLED_AVAILABLE = True
+    print("[OLED] Direct OLED hardware libraries imported successfully")
 except ImportError as e:
-    print(f"[WARNING] OLED library import failed: {e}")
+    print(f"[WARNING] OLED hardware libraries import failed: {e}")
     import traceback
     traceback.print_exc()
     OLED_AVAILABLE = False
-    OledDisplay = None
+    board = None
+    busio = None
+    digitalio = None
+    adafruit_ssd1306 = None
+    SCL = None
+    SDA = None
+    Image = None
+    ImageDraw = None
+    ImageFont = None
 except Exception as e:
-    print(f"[WARNING] Error setting up OLED import: {e}")
+    print(f"[WARNING] Error setting up OLED imports: {e}")
     import traceback
     traceback.print_exc()
     OLED_AVAILABLE = False
-    OledDisplay = None
 
 # Import AnalogueKeypad (from MyFirstPythonProject) - same pattern as OLED
 try:
     import os
     import sys
     
-    # Find MyFirstPythonProject directory (already computed above)
+    # Find MyFirstPythonProject directory
+    current_file = os.path.abspath(__file__)
+    assignment_dir = os.path.dirname(os.path.dirname(current_file))  # /var/lib/cloud9/Assignment
+    cloud9_dir = os.path.dirname(assignment_dir)  # /var/lib/cloud9
+    myproject_dir = os.path.join(cloud9_dir, 'MyFirstPythonProject')  # /var/lib/cloud9/MyFirstPythonProject
+    
     analogue_keypad_file = os.path.join(myproject_dir, 'analogue_key.py')
     alt_keypad_file = os.path.join(assignment_dir, 'MyFirstPythonProject', 'analogue_key.py')
     
@@ -144,7 +115,13 @@ try:
     import os
     import sys
     
-    # Find MyFirstPythonProject directory (already computed above)
+    # Find MyFirstPythonProject directory (recompute if not already defined)
+    if 'myproject_dir' not in globals():
+        current_file = os.path.abspath(__file__)
+        assignment_dir = os.path.dirname(os.path.dirname(current_file))  # /var/lib/cloud9/Assignment
+        cloud9_dir = os.path.dirname(assignment_dir)  # /var/lib/cloud9
+        myproject_dir = os.path.join(cloud9_dir, 'MyFirstPythonProject')  # /var/lib/cloud9/MyFirstPythonProject
+    
     eightx8_file = os.path.join(myproject_dir, '8x8.py')
     alt_eightx8_file = os.path.join(assignment_dir, 'MyFirstPythonProject', '8x8.py')
     
@@ -184,15 +161,29 @@ except Exception as e:
     LedMatrix8x8 = None
 
 # Global hardware objects
-oled_display = None
+Display = None  # OLED Display object (adafruit_ssd1306.SSD1306_I2C)
+ImageObj = None  # PIL Image object
+Draw = None  # PIL ImageDraw object
+Font = None  # PIL ImageFont object
 analogue_keypad = None
 pot_adc = None  # Potentiometer ADC
 POT_AVAILABLE = False
 led_matrix = None  # 8x8 LED Matrix
 
+def OLEDClickInit():
+    """Initialize OLED Click board - using old pins (P9_16, P9_23) with new method from Web_Assignment (3).py"""
+    Pin_DC = digitalio.DigitalInOut(board.P9_16)  # Old pin from original module5 library
+    Pin_DC.direction = digitalio.Direction.OUTPUT
+    Pin_DC.value = False
+    Pin_RESET = digitalio.DigitalInOut(board.P9_23)  # Old pin from original module5 library
+    Pin_RESET.direction = digitalio.Direction.OUTPUT
+    Pin_RESET.value = True
+    L_I2c = busio.I2C(SCL, SDA)
+    return L_I2c
+
 def init_oled():
-    """Initialize OLED display - Slot 1 (I2C) - using same pattern as WebServer.py"""
-    global oled_display
+    """Initialize OLED display - Slot 1 (I2C) - using old pins (P9_16, P9_23) with new method from Web_Assignment (3).py"""
+    global Display, ImageObj, Draw, Font
     print("[OLED] Initializing OLED display (Slot 1 - I2C)...")
     
     if not OLED_AVAILABLE:
@@ -200,28 +191,24 @@ def init_oled():
         return
     
     try:
-        # Use same pattern as WebServer.py: lazy_hw=True, then open()
-        # Default size is 64x32, default I2C address is 0x3C
-        # Note: oled.py uses Adafruit CircuitPython libraries (board, busio, adafruit_ssd1306)
-        print("[OLED] Creating OledDisplay with lazy_hw=True...")
-        oled_display = OledDisplay(lazy_hw=True)
-        print("[OLED] Calling open()...")
-        oled_display.open()
-        print("[OLED] Display opened successfully")
-        
-        # Test display
-        print("[OLED] Testing display...")
-        oled_display.clear()  # clear() calls show()
-        oled_display.draw_text("Module 5", 0, 0)  # draw_text() calls show()
-        oled_display.draw_text("Ready...", 0, 10)  # draw_text() calls show()
-        # No need to call show() again - draw_text() already does it
+        # Use old pins (P9_16, P9_23) from original module5 library, but with new direct initialization method
+        #OLED
+        G_I2c = OLEDClickInit()
+        Display = adafruit_ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, G_I2c, addr=0x3C)
+        ImageObj = Image.new("1", (Display.width, Display.height))
+        Draw = ImageDraw.Draw(ImageObj)
+        Draw.rectangle((16, 12, Display.width - 1, Display.height - 1), outline=1, fill=0)
+        Font = ImageFont.load_default()
         print("[OLED] OLED display initialized successfully")
     except Exception as e:
         print(f"[OLED] Error initializing OLED: {e}")
         print(f"[OLED] Error details: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        oled_display = None
+        Display = None
+        ImageObj = None
+        Draw = None
+        Font = None
 
 def init_bar_graph():
     """Initialize 8x8 LED Matrix (Slot 3 - SPI)"""
@@ -414,13 +401,24 @@ def read_button():
 
 def show_connecting():
         """Display 'Connecting...' message on OLED and loading animation on 8x8 matrix"""
-        global oled_display, led_matrix
-        if oled_display:
+        global Display, ImageObj, Draw, Font, led_matrix
+        if Display:
             try:
-                oled_display.clear()  # clear() calls show()
-                oled_display.draw_centered_text("Connecting", 8)  # draw_centered_text() calls show()
-                oled_display.draw_centered_text("...", 20)  # draw_centered_text() calls show()
-                # No need to call show() again - draw_centered_text() already does it
+                # Clear screen
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                # Center text calculation
+                text1 = "Connecting"
+                text2 = "..."
+                bbox1 = Draw.textbbox((0, 0), text1, font=Font)
+                bbox2 = Draw.textbbox((0, 0), text2, font=Font)
+                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
+                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
+                Draw.text((x1, 8), text1, font=Font, fill=1)
+                Draw.text((x2, 20), text2, font=Font, fill=1)
+                Display.image(ImageObj)
+                Display.show()
             except Exception as e:
                 print(f"[OLED] Error showing connecting: {e}")
         
@@ -493,13 +491,24 @@ def stop_matrix_loading():
 
 def show_connected():
         """Display 'Connected' message on OLED and stop loading animation on 8x8 matrix"""
-        global oled_display
-        if oled_display:
+        global Display, ImageObj, Draw, Font
+        if Display:
             try:
-                oled_display.clear()  # clear() calls show()
-                oled_display.draw_centered_text("Connected", 8)  # draw_centered_text() calls show()
-                oled_display.draw_centered_text("Waiting...", 20)  # draw_centered_text() calls show()
-                # No need to call show() again - draw_centered_text() already does it
+                # Clear screen
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                # Center text calculation
+                text1 = "Connected"
+                text2 = "Waiting..."
+                bbox1 = Draw.textbbox((0, 0), text1, font=Font)
+                bbox2 = Draw.textbbox((0, 0), text2, font=Font)
+                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
+                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
+                Draw.text((x1, 8), text1, font=Font, fill=1)
+                Draw.text((x2, 20), text2, font=Font, fill=1)
+                Display.image(ImageObj)
+                Display.show()
             except Exception as e:
                 print(f"[OLED] Error showing connected: {e}")
         
@@ -516,14 +525,28 @@ def show_connected():
 
 def show_connection_error():
         """Display connection error on OLED and stop loading animation on 8x8 matrix"""
-        global oled_display
-        if oled_display:
+        global Display, ImageObj, Draw, Font
+        if Display:
             try:
-                oled_display.clear()  # clear() calls show()
-                oled_display.draw_centered_text("Error!", 0)  # draw_centered_text() calls show()
-                oled_display.draw_centered_text("No server", 12)  # draw_centered_text() calls show()
-                oled_display.draw_centered_text("Check URL", 24)  # draw_centered_text() calls show()
-                # No need to call show() again - draw_centered_text() already does it
+                # Clear screen
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                # Center text calculation
+                text1 = "Error!"
+                text2 = "No server"
+                text3 = "Check URL"
+                bbox1 = Draw.textbbox((0, 0), text1, font=Font)
+                bbox2 = Draw.textbbox((0, 0), text2, font=Font)
+                bbox3 = Draw.textbbox((0, 0), text3, font=Font)
+                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
+                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
+                x3 = (Display.width - (bbox3[2] - bbox3[0])) // 2
+                Draw.text((x1, 0), text1, font=Font, fill=1)
+                Draw.text((x2, 12), text2, font=Font, fill=1)
+                Draw.text((x3, 24), text3, font=Font, fill=1)
+                Display.image(ImageObj)
+                Display.show()
             except Exception as e:
                 print(f"[OLED] Error showing error: {e}")
         
@@ -538,16 +561,16 @@ def show_connection_error():
 
 def update_oled_display(view, data):
         """Update OLED display and 8x8 LED matrix with current view"""
-        global oled_display, last_oled_update_time, oled_update_lock
+        global Display, ImageObj, Draw, Font, last_oled_update_time, oled_update_lock
         
         if not data:
             print("[OLED] No data to display")
             return
         
-        if not oled_display:
+        if not Display:
             print("[OLED] OLED display not initialized - skipping update")
         else:
-            print(f"[OLED] Updating view: {view}, OLED available: {oled_display is not None}")
+            print(f"[OLED] Updating view: {view}, OLED available: {Display is not None}")
         
         # Use lock to prevent concurrent updates
         with oled_update_lock:
@@ -577,12 +600,15 @@ def update_oled_display(view, data):
                 else:
                     print(f"[OLED] Unknown view: {view}")
                     # Show error on OLED
-                    if oled_display:
+                    if Display:
                         try:
-                            oled_display.clear()  # clear() calls show()
-                            oled_display.draw_text("ERROR", 0, 0)  # draw_text() calls show()
-                            oled_display.draw_text(f"View: {view[:10]}", 0, 8)  # draw_text() calls show()
-                            # No need to call show() again - draw_text() already does it
+                            ImageObj = Image.new("1", (Display.width, Display.height))
+                            Draw = ImageDraw.Draw(ImageObj)
+                            Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                            Draw.text((0, 0), "ERROR", font=Font, fill=1)
+                            Draw.text((0, 8), f"View: {view[:10]}", font=Font, fill=1)
+                            Display.image(ImageObj)
+                            Display.show()
                         except:
                             pass
             except Exception as e:
@@ -590,12 +616,15 @@ def update_oled_display(view, data):
                 import traceback
                 traceback.print_exc()
                 # Try to show error on OLED
-                if oled_display:
+                if Display:
                     try:
-                        oled_display.clear()  # clear() calls show()
-                        oled_display.draw_text("ERROR", 0, 0)  # draw_text() calls show()
-                        oled_display.draw_text(str(e)[:20], 0, 8)  # draw_text() calls show()
-                        # No need to call show() again - draw_text() already does it
+                        ImageObj = Image.new("1", (Display.width, Display.height))
+                        Draw = ImageDraw.Draw(ImageObj)
+                        Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                        Draw.text((0, 0), "ERROR", font=Font, fill=1)
+                        Draw.text((0, 8), str(e)[:20], font=Font, fill=1)
+                        Display.image(ImageObj)
+                        Display.show()
                     except:
                         pass
         
@@ -622,7 +651,7 @@ def update_oled_display(view, data):
 
 def show_current_status(data):
         """Display View 1: Current Status (scrollable)"""
-        global oled_display
+        global Display, ImageObj, Draw, Font
         
         current = data.get('current', {})
         weather = data.get('weather', {})
@@ -663,38 +692,39 @@ def show_current_status(data):
         print(f'[SCROLL DEBUG] STATUS: pot={pot_value:.3f}, max_items={max_items}, max_scroll={max_scroll}, offset={scroll_offset}')
         
         # Draw on OLED - Page 1: Status (scrollable, 3 lines visible)
-        if oled_display:
+        if Display:
             try:
                 # Batch all drawing operations, then show() once to avoid corruption
-                if oled_display._draw is None:
-                    oled_display.open()
-                oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
                 
                 # Line 1: Title with scroll indicator
                 if max_scroll > 0:
                     scroll_indicator = f"STATUS [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "STATUS"
-                oled_display._draw.text((0, 0), scroll_indicator[:16], font=oled_display._font, fill=1)
+                Draw.text((0, 0), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 lines starting from scroll_offset
                 y = 8
                 for i in range(3):
                     idx = scroll_offset + i
                     if idx < len(status_lines):
-                        oled_display._draw.text((0, y), status_lines[idx], font=oled_display._font, fill=1)
+                        Draw.text((0, y), status_lines[idx], font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
                 time.sleep(0.01)  # 10ms delay before show()
-                oled_display.show()
+                Display.image(ImageObj)
+                Display.show()
                 time.sleep(0.01)  # 10ms delay after show() to ensure update completes
             except Exception as e:
                 print(f"[OLED] Error drawing status: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print("[OLED] WARNING: oled_display is None - cannot draw")
+            print("[OLED] WARNING: Display is None - cannot draw")
         
         # Also print to console for debugging
         print(f"""
@@ -716,7 +746,7 @@ def show_current_status(data):
 
 def show_today_pattern(data):
         """Display View 2A: Today's Pattern (scrollable)"""
-        global oled_display
+        global Display, ImageObj, Draw, Font
         
         patterns = data.get('patterns', {})
         hourly = patterns.get('today_hourly', [])
@@ -731,19 +761,19 @@ def show_today_pattern(data):
         print(f'[SCROLL DEBUG] TODAY: pot={pot_value:.3f}, max_items={max_items}, max_scroll={max_scroll}, offset={scroll_offset}')
         
         # Draw on OLED - Page 2: Today Pattern (scrollable, 3 lines visible)
-        if oled_display:
+        if Display:
             try:
                 # Batch all drawing operations, then show() once to avoid corruption
-                if oled_display._draw is None:
-                    oled_display.open()
-                oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
                 
                 # Line 1: Title with scroll indicator
                 if max_scroll > 0:
                     scroll_indicator = f"TODAY [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "TODAY"
-                oled_display._draw.text((0, 0), scroll_indicator[:16], font=oled_display._font, fill=1)
+                Draw.text((0, 0), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 hours starting from scroll_offset
                 y = 8
@@ -768,12 +798,13 @@ def show_today_pattern(data):
                             hour_12 = hour_24 - 12
                             am_pm = "PM"
                         
-                        oled_display._draw.text((0, y), f"{hour_12:2d}{am_pm}:{int(occ*100)}%", font=oled_display._font, fill=1)
+                        Draw.text((0, y), f"{hour_12:2d}{am_pm}:{int(occ*100)}%", font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
                 time.sleep(0.01)  # 10ms delay before show()
-                oled_display.show()
+                Display.image(ImageObj)
+                Display.show()
                 time.sleep(0.01)  # 10ms delay after show() to ensure update completes
             except Exception as e:
                 print(f"[OLED] Error drawing pattern: {e}")
@@ -843,7 +874,7 @@ def show_today_pattern(data):
 
 def show_weekly_comparison(data):
         """Display View 2B: Weekly Comparison (scrollable)"""
-        global oled_display
+        global Display, ImageObj, Draw, Font
         
         patterns = data.get('patterns', {})
         weekly = patterns.get('week_same_time', [])
@@ -858,19 +889,19 @@ def show_weekly_comparison(data):
         print(f'[SCROLL DEBUG] WEEKLY: pot={pot_value:.3f}, max_items={max_items}, max_scroll={max_scroll}, offset={scroll_offset}')
         
         # Draw on OLED - Page 3: Weekly Comparison (scrollable, 3 lines visible)
-        if oled_display:
+        if Display:
             try:
                 # Batch all drawing operations, then show() once to avoid corruption
-                if oled_display._draw is None:
-                    oled_display.open()
-                oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+                ImageObj = Image.new("1", (Display.width, Display.height))
+                Draw = ImageDraw.Draw(ImageObj)
+                Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
                 
                 # Line 1: Title with scroll indicator
                 if max_scroll > 0:
                     scroll_indicator = f"WEEKLY [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "WEEKLY"
-                oled_display._draw.text((0, 0), scroll_indicator[:16], font=oled_display._font, fill=1)
+                Draw.text((0, 0), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 days starting from scroll_offset
                 y = 8
@@ -880,12 +911,13 @@ def show_weekly_comparison(data):
                         day_data = weekly[idx]
                         day_name = day_data.get('day', '')[:3]  # Mon, Tue, etc
                         occ = day_data.get('occupancy', 0)
-                        oled_display._draw.text((0, y), f"{day_name}:{int(occ*100)}%", font=oled_display._font, fill=1)
+                        Draw.text((0, y), f"{day_name}:{int(occ*100)}%", font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
                 time.sleep(0.01)  # 10ms delay before show()
-                oled_display.show()
+                Display.image(ImageObj)
+                Display.show()
                 time.sleep(0.01)  # 10ms delay after show() to ensure update completes
             except Exception as e:
                 print(f"[OLED] Error drawing weekly: {e}")
@@ -929,7 +961,7 @@ def show_weekly_comparison(data):
 
 def show_weather_details(data):
     """Display View 3: Weather Details"""
-    global oled_display
+    global Display, ImageObj, Draw, Font
     
     weather = data.get('weather', {})
     recommendations = data.get('recommendations', {})
@@ -962,26 +994,27 @@ def show_weather_details(data):
     bar_display = "█" * comfort_bars + "░" * (5 - comfort_bars)
     
     # Draw on OLED - Page 4: Weather (compact, 3 lines)
-    if oled_display:
+    if Display:
         try:
             # Batch all drawing operations, then show() once to avoid corruption
-            if oled_display._draw is None:
-                oled_display.open()
-            oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+            ImageObj = Image.new("1", (Display.width, Display.height))
+            Draw = ImageDraw.Draw(ImageObj)
+            Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
             
             # Line 1: Title
-            oled_display._draw.text((0, 0), "WEATHER", font=oled_display._font, fill=1)
+            Draw.text((0, 0), "WEATHER", font=Font, fill=1)
             # Line 2: Temperature and Humidity
-            oled_display._draw.text((0, 8), f"T:{temp}C H:{humidity}%", font=oled_display._font, fill=1)
+            Draw.text((0, 8), f"T:{temp}C H:{humidity}%", font=Font, fill=1)
             # Line 3: UV and Comfort (compact to fit)
-            oled_display._draw.text((0, 16), f"UV:{uv} C:{comfort}/5", font=oled_display._font, fill=1)
+            Draw.text((0, 16), f"UV:{uv} C:{comfort}/5", font=Font, fill=1)
             # Line 4: Air Quality (if OLED_HEIGHT >= 32, which it is - 64x32)
             aq_short = aq_display[:4] if len(aq_display) > 4 else aq_display
-            oled_display._draw.text((0, 24), f"AQ:{aq_short}", font=oled_display._font, fill=1)
+            Draw.text((0, 24), f"AQ:{aq_short}", font=Font, fill=1)
             
             # Show once at the end - add small delay to ensure display is ready
             time.sleep(0.01)  # 10ms delay before show()
-            oled_display.show()
+            Display.image(ImageObj)
+            Display.show()
             time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing weather: {e}")
@@ -1011,7 +1044,7 @@ def show_weather_details(data):
 
 def show_alternatives(data):
     """Display View 4: Alternative Courts (scrollable)"""
-    global oled_display
+    global Display, ImageObj, Draw, Font
     
     recommendations = data.get('recommendations', {})
     alternatives = recommendations.get('nearby_alternatives', [])
@@ -1026,19 +1059,19 @@ def show_alternatives(data):
     print(f'[SCROLL DEBUG] ALTERNATIVES: pot={pot_value:.3f}, max_items={max_items}, max_scroll={max_scroll}, offset={scroll_offset}')
     
     # Draw on OLED - Page 5: Alternatives (scrollable, 1 alternative visible = 3 lines)
-    if oled_display:
+    if Display:
         try:
             # Batch all drawing operations, then show() once to avoid corruption
-            if oled_display._draw is None:
-                oled_display.open()
-            oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+            ImageObj = Image.new("1", (Display.width, Display.height))
+            Draw = ImageDraw.Draw(ImageObj)
+            Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
             
             # Line 1: Title with scroll indicator
             if max_scroll > 0:
                 scroll_indicator = f"OTHERS [{scroll_offset+1}/{max_items}]"
             else:
                 scroll_indicator = "OTHERS"
-            oled_display._draw.text((0, 0), scroll_indicator[:16], font=oled_display._font, fill=1)
+            Draw.text((0, 0), scroll_indicator[:16], font=Font, fill=1)
             
             # Show alternative at scroll_offset
             if scroll_offset < len(alternatives):
@@ -1047,15 +1080,16 @@ def show_alternatives(data):
                 people = alt.get('people', 0)
                 status = alt.get('status', 'unknown')[:3]  # Short status
                 # Line 2: Court name and status
-                oled_display._draw.text((0, 8), f"{name}:{status}", font=oled_display._font, fill=1)
+                Draw.text((0, 8), f"{name}:{status}", font=Font, fill=1)
                 # Line 3: People count
-                oled_display._draw.text((0, 16), f"PPL:{people}", font=oled_display._font, fill=1)
+                Draw.text((0, 16), f"PPL:{people}", font=Font, fill=1)
             else:
-                oled_display._draw.text((0, 8), "None", font=oled_display._font, fill=1)
+                Draw.text((0, 8), "None", font=Font, fill=1)
             
             # Show once at the end - add small delay to ensure display is ready
             time.sleep(0.01)  # 10ms delay before show()
-            oled_display.show()
+            Display.image(ImageObj)
+            Display.show()
             time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing alternatives: {e}")
@@ -1109,7 +1143,7 @@ def show_alternatives(data):
 
 def show_court_info(data):
     """Display View 5: Court Information (scrollable)"""
-    global oled_display
+    global Display, ImageObj, Draw, Font
     
     info = data.get('info', {})
     
@@ -1150,31 +1184,32 @@ def show_court_info(data):
     print(f'[SCROLL DEBUG] INFO: pot={pot_value:.3f}, max_items={max_items}, max_scroll={max_scroll}, offset={scroll_offset}')
     
     # Draw on OLED - Page 6: Court Info (scrollable, 3 lines visible)
-    if oled_display:
+    if Display:
         try:
             # Batch all drawing operations, then show() once to avoid corruption
-            if oled_display._draw is None:
-                oled_display.open()
-            oled_display._draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
+            ImageObj = Image.new("1", (Display.width, Display.height))
+            Draw = ImageDraw.Draw(ImageObj)
+            Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
             
             # Line 1: Title with scroll indicator
             if max_scroll > 0:
                 scroll_indicator = f"INFO [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
             else:
                 scroll_indicator = "INFO"
-            oled_display._draw.text((0, 0), scroll_indicator[:16], font=oled_display._font, fill=1)
+            Draw.text((0, 0), scroll_indicator[:16], font=Font, fill=1)
             
             # Show 3 lines starting from scroll_offset
             y = 8
             for i in range(3):
                 idx = scroll_offset + i
                 if idx < len(info_lines):
-                    oled_display._draw.text((0, y), info_lines[idx], font=oled_display._font, fill=1)
+                    Draw.text((0, y), info_lines[idx], font=Font, fill=1)
                     y += 8
             
             # Show once at the end - add small delay to ensure display is ready
             time.sleep(0.01)  # 10ms delay before show()
-            oled_display.show()
+            Display.image(ImageObj)
+            Display.show()
             time.sleep(0.01)  # 10ms delay after show() to ensure update completes
         except Exception as e:
             print(f"[OLED] Error drawing info: {e}")
@@ -1568,14 +1603,19 @@ def registration_ack(data):
 @sio.event
 def DisplayUpdate(data):
         """Receive display update from server"""
-        global current_data, oled_display
+        global current_data, Display, last_oled_update_time
         print(f'[{datetime.now().strftime("%H:%M:%S")}] Display update received')
         
         current_data = data
         
+        # Force update by resetting debounce timer to allow immediate refresh
+        # This ensures the display updates immediately when new data arrives
+        # Set to a time far in the past to bypass debounce check
+        last_oled_update_time = (time.time() * 1000) - (OLED_UPDATE_DEBOUNCE_MS + 100)
+        
         # Update OLED and 8x8 LED matrix based on current view
         # (update_oled_display now also calls update_led_matrix internally)
-        print(f'[DEBUG] Updating OLED with view: {current_view}, OLED available: {oled_display is not None}')
+        print(f'[DEBUG] Updating OLED with view: {current_view}, OLED available: {Display is not None}')
         update_oled_display(current_view, data)
 
 # ========== BUTTON HANDLING ==========
@@ -1639,13 +1679,16 @@ def handle_button_press(button_id):
         else:
             print(f'[WARNING] No data available to display for view: {current_view}')
             # Show a placeholder on OLED if no data
-            if oled_display:
+            if Display:
                 try:
-                    oled_display.clear()  # clear() calls show()
-                    oled_display.draw_text("NO DATA", 0, 0)  # draw_text() calls show()
-                    oled_display.draw_text(f"View: {current_view[:8]}", 0, 8)  # draw_text() calls show()
-                    oled_display.draw_text("Waiting...", 0, 16)  # draw_text() calls show()
-                    # No need to call show() again - draw_text() already does it
+                    ImageObj = Image.new("1", (Display.width, Display.height))
+                    Draw = ImageDraw.Draw(ImageObj)
+                    Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
+                    Draw.text((0, 0), "NO DATA", font=Font, fill=1)
+                    Draw.text((0, 8), f"View: {current_view[:8]}", font=Font, fill=1)
+                    Draw.text((0, 16), "Waiting...", font=Font, fill=1)
+                    Display.image(ImageObj)
+                    Display.show()
                 except Exception as e:
                     print(f'[ERROR] Failed to show placeholder: {e}')
         
@@ -1784,7 +1827,7 @@ def main():
         init_potentiometer()  # Initialize potentiometer for scrolling
         init_bar_graph()  # Initialize 8x8 LED matrix (Slot 3)
         # init_buzz()        # Not available - buzzer not connected
-        if oled_display:
+        if Display:
             print("\n[OK] OLED initialized successfully")
         else:
             print("\n[WARNING] OLED not initialized - using console output only")
