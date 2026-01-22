@@ -285,6 +285,13 @@ current_data = {
     'feedback': []
 }
 
+# Module 3 specific tracking
+module3_state = {
+    'last_rating_timestamp': None,  # ISO timestamp of last rating interaction
+    'latest_rating': None,  # Latest rating value (1-5)
+    'kiosk_active': False  # Whether kiosk is currently in use
+}
+
 # --- Mock Mode State ---
 mock_state = {
     'active': False,
@@ -490,6 +497,10 @@ def module5_test():
 @app.route('/module3')
 def module1_test():
     return render_template('module3.html')
+
+@app.route('/debug')
+def debug_page():
+    return render_template('debug.html')
 
 @app.route('/api/analyze_image', methods=['POST'])
 def analyze_image():
@@ -962,8 +973,31 @@ def handle_feedback_status(data):
     status = 'active' if is_active else 'idle'
     distance = data.get('distance_cm')
     
+    # Update module3_state
+    module3_state['kiosk_active'] = is_active
+    
     print(f"[{datetime.now()}] Module 3 Status: {module_id} is {status}" + 
           (f" (distance: {distance:.1f}cm)" if distance else ""))
+    
+    # Calculate time since last rating interaction
+    time_since_last_rating = None
+    if module3_state['last_rating_timestamp']:
+        try:
+            last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
+            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+            time_diff = (now - last_rating_dt).total_seconds()
+            
+            # Format time difference
+            if time_diff < 60:
+                time_since_last_rating = f"{int(time_diff)}s ago"
+            elif time_diff < 3600:
+                time_since_last_rating = f"{int(time_diff // 60)}m ago"
+            elif time_diff < 86400:
+                time_since_last_rating = f"{int(time_diff // 3600)}h ago"
+            else:
+                time_since_last_rating = f"{int(time_diff // 86400)}d ago"
+        except Exception as e:
+            print(f"[WARNING] Error calculating time since last rating: {e}")
     
     # Emit status update to dashboard
     socketio.emit('feedback_status_update', {
@@ -972,7 +1006,10 @@ def handle_feedback_status(data):
         'is_active': is_active,
         'distance_cm': distance,
         'screen_on': is_active,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'last_rating_timestamp': module3_state['last_rating_timestamp'],
+        'latest_rating': module3_state['latest_rating'],
+        'time_since_last_rating': time_since_last_rating
     })
 
 @socketio.on('FeedbackDataEvent')
@@ -983,6 +1020,15 @@ def handle_feedback_data(data):
     current_data['feedback'].append(data)
     if len(current_data['feedback']) > 50:
         current_data['feedback'].pop(0)
+    
+    # Track latest rating and timestamp if this is a rating interaction
+    feedback_data = data.get('data', {})
+    if feedback_data.get('report_type') == 'rating':
+        rating = feedback_data.get('rating')
+        if rating is not None:
+            module3_state['latest_rating'] = rating
+            module3_state['last_rating_timestamp'] = datetime.now().isoformat()
+            print(f"[{datetime.now()}] Module 3: Latest rating updated to {rating}/5")
     
     # Calculate average rating from all feedback entries
     ratings = []
@@ -1002,12 +1048,36 @@ def handle_feedback_data(data):
     for rating in ratings:
         rating_distribution[rating] = rating_distribution.get(rating, 0) + 1
     
+    # Calculate time since last rating interaction
+    time_since_last_rating = None
+    if module3_state['last_rating_timestamp']:
+        try:
+            last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
+            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+            time_diff = (now - last_rating_dt).total_seconds()
+            
+            # Format time difference
+            if time_diff < 60:
+                time_since_last_rating = f"{int(time_diff)}s ago"
+            elif time_diff < 3600:
+                time_since_last_rating = f"{int(time_diff // 60)}m ago"
+            elif time_diff < 86400:
+                time_since_last_rating = f"{int(time_diff // 3600)}h ago"
+            else:
+                time_since_last_rating = f"{int(time_diff // 86400)}d ago"
+        except Exception as e:
+            print(f"[WARNING] Error calculating time since last rating: {e}")
+    
     # Add calculated statistics to the update
     update_data = data.copy()
     update_data['statistics'] = {
         'average_rating': average_rating,
         'total_ratings': total_ratings,
-        'rating_distribution': rating_distribution
+        'rating_distribution': rating_distribution,
+        'latest_rating': module3_state['latest_rating'],
+        'last_rating_timestamp': module3_state['last_rating_timestamp'],
+        'time_since_last_rating': time_since_last_rating,
+        'kiosk_active': module3_state['kiosk_active']
     }
     
     socketio.emit('feedback_update', update_data)

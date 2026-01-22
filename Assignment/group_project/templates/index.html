@@ -9,45 +9,52 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root{
-      /* Pure neutrals (Boldness & Clarity) */
-      --bg: #fafafa;
+      /* Pure neutrals (Boldness & Clarity) - High contrast, dramatic negative space */
+      --bg: #ffffff;
       --card: #ffffff;
-      --text: #171717;
-      --muted: #737373;
-      --faint: #a3a3a3;
-      --border: rgba(0,0,0,0.08);
-      --borderSubtle: rgba(0,0,0,0.05);
-      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+      --surface: #fafafa;
+      --text: #0a0a0a;
+      --textSecondary: #525252;
+      --textMuted: #737373;
+      --textFaint: #a3a3a3;
+      --border: rgba(0,0,0,0.12);
+      --borderSubtle: rgba(0,0,0,0.06);
 
-      /* Accent (one) */
-      --accent: #2563eb; /* blue-600 */
+      /* Accent (one) - Blue for trust */
+      --accent: #2563eb;
       --accentBg: rgba(37,99,235,0.08);
+      --accentBorder: rgba(37,99,235,0.2);
 
-      /* Semantic */
+      /* Semantic colors - for meaning only */
       --success: #16a34a;
       --danger: #dc2626;
       --warning: #ea580c;
 
-      /* Grid */
-      --r6: 6px;
-      --r8: 8px;
-      --r12: 12px;
+      /* 4px Grid System */
       --s4: 4px;
       --s8: 8px;
       --s12: 12px;
       --s16: 16px;
       --s24: 24px;
       --s32: 32px;
+
+      /* Border Radius - Consistent system (sharp: 4px, 6px, 8px) */
+      --r4: 4px;
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
     }
 
     * { box-sizing: border-box; }
-    html, body { height: 100%; }
+    html, body { height: 100%; margin: 0; }
     body {
-      margin: 0;
       background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      font-size: 14px;
       line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     /* Layout */
@@ -90,17 +97,17 @@
       }
     }
 
-    /* Cards */
+    /* Cards - Borders-only approach (no shadows) */
     .card {
       background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--r12);
-      box-shadow: var(--shadow);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r8);
       padding: var(--s24);
       min-width: 0;
     }
     .card.flat {
-      box-shadow: none;
+      border: none;
+      padding: 0;
     }
     .cardHeader {
       display: flex;
@@ -112,15 +119,17 @@
       margin-bottom: var(--s16);
     }
     .title {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
       letter-spacing: -0.02em;
       margin: 0;
+      color: var(--text);
     }
     .subtitle {
-      font-size: 13px;
-      color: var(--muted);
+      font-size: 12px;
+      color: var(--textMuted);
       margin: 0;
+      font-weight: 500;
     }
 
     /* Header */
@@ -138,28 +147,31 @@
     }
     .brand h1{
       margin:0;
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 700;
       letter-spacing: -0.03em;
+      color: var(--text);
     }
     .metaRow{
       display:flex;
       align-items:center;
       gap: var(--s12);
-      color: var(--muted);
-      font-size: 13px;
+      color: var(--textMuted);
+      font-size: 12px;
       margin-top: var(--s8);
+      font-weight: 500;
     }
     .pill{
       display:inline-flex;
       align-items:center;
       gap: var(--s8);
-      padding: 6px 10px;
-      border-radius: var(--r8);
-      border: 1px solid var(--border);
-      background: #fff;
-      font-size: 12px;
-      color: var(--muted);
+      padding: var(--s4) var(--s8);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--textMuted);
       white-space: nowrap;
     }
     .dot{
@@ -182,13 +194,29 @@
     }
     .kpi{
       padding: var(--s16);
-      border: 1px solid var(--borderSubtle);
-      border-radius: var(--r12);
-      background: #fff;
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      background: var(--card);
     }
-    .kpiLabel{ font-size: 12px; color: var(--muted); margin-bottom: var(--s8); font-weight: 500; }
-    .kpiValue{ font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
-    .mono{ font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+    .kpiLabel{ 
+      font-size: 11px; 
+      color: var(--textMuted); 
+      margin-bottom: var(--s8); 
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .kpiValue{ 
+      font-size: 20px; 
+      font-weight: 700; 
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .mono{ 
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-variant-numeric: tabular-nums; 
+      font-feature-settings: "tnum" 1; 
+    }
 
     /* Panels */
     .left { grid-area: left; }
@@ -210,18 +238,20 @@
       display:inline-flex;
       align-items:center;
       gap: var(--s8);
-      padding: 6px 10px;
-      border-radius: var(--r8);
-      border: 1px solid var(--border);
-      background: #fff;
-      font-size: 12px;
-      font-weight: 500;
+      padding: var(--s4) var(--s8);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 600;
       color: var(--text);
       white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
     }
-    .badge.muted{ color: var(--muted); }
+    .badge.muted{ color: var(--textMuted); }
     .badgeAccent{
-      border-color: rgba(37,99,235,0.25);
+      border-color: var(--accentBorder);
       background: var(--accentBg);
       color: var(--accent);
     }
@@ -235,13 +265,18 @@
       display:flex;
       align-items:center;
       justify-content:space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--borderSubtle);
-      font-size: 13px;
-      color: var(--muted);
+      padding: var(--s12) 0;
+      border-bottom: 0.5px solid var(--borderSubtle);
+      font-size: 12px;
+      color: var(--textMuted);
     }
     .row:last-child{ border-bottom: none; }
-    .row .val{ color: var(--text); font-weight: 600; letter-spacing: -0.01em; }
+    .row .val{ 
+      color: var(--text); 
+      font-weight: 600; 
+      letter-spacing: -0.01em;
+      font-size: 13px;
+    }
 
     .gaugeWrap{
       display:flex;
@@ -318,53 +353,69 @@
     }
     .metric{
       padding: var(--s16);
-      border-radius: var(--r12);
-      border: 1px solid var(--borderSubtle);
-      background: #fff;
+      border-radius: var(--r8);
+      border: 0.5px solid var(--borderSubtle);
+      background: var(--card);
       min-width: 0;
     }
     .metricLabel{
-      font-size: 12px;
-      color: var(--muted);
+      font-size: 11px;
+      color: var(--textMuted);
       font-weight: 500;
       margin-bottom: var(--s8);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
     }
     .metricValue{
       font-size: 18px;
-      font-weight: 650;
-      letter-spacing: -0.02em;
+      font-weight: 700;
+      letter-spacing: -0.03em;
       color: var(--text);
     }
     .emptyState{
       padding: var(--s24);
-      border: 1px dashed var(--border);
-      border-radius: var(--r12);
-      color: var(--faint);
-      font-size: 13px;
+      border: 0.5px dashed var(--borderSubtle);
+      border-radius: var(--r8);
+      color: var(--textFaint);
+      font-size: 12px;
       text-align:center;
+      background: var(--surface);
     }
 
     /* Controls */
     .btnRow{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--s12); }
     .btn{
-      padding: 10px 12px;
-      border-radius: var(--r12);
-      border: 1px solid var(--border);
-      background: #fff;
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: -0.01em;
-      transition: transform 150ms cubic-bezier(0.25,1,0.5,1), box-shadow 150ms cubic-bezier(0.25,1,0.5,1), border-color 150ms cubic-bezier(0.25,1,0.5,1);
+      color: var(--text);
+      transition: border-color 150ms cubic-bezier(0.25,1,0.5,1), background-color 150ms cubic-bezier(0.25,1,0.5,1);
+      text-decoration: none;
+      display: inline-block;
     }
     .btn:hover{
-      transform: translateY(-1px);
-      border-color: rgba(0,0,0,0.14);
-      box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+      border-color: var(--border);
+      background: var(--surface);
     }
-    .btn:active{ transform: translateY(0); }
-    .btn.primary{ border-color: rgba(37,99,235,0.35); background: var(--accentBg); color: var(--accent); }
-    .btn.danger{ border-color: rgba(220,38,38,0.35); background: rgba(220,38,38,0.08); color: var(--danger); }
+    .btn:active{ background: var(--card); }
+    .btn.primary{ 
+      border-color: var(--accentBorder); 
+      background: var(--accentBg); 
+      color: var(--accent); 
+    }
+    .btn.primary:hover{
+      background: rgba(37,99,235,0.12);
+    }
+    .btn.danger{ 
+      border-color: rgba(220,38,38,0.3); 
+      background: rgba(220,38,38,0.08); 
+      color: var(--danger); 
+    }
 
     .inline{
       display:flex;
@@ -378,25 +429,25 @@
       justify-content:space-between;
       gap: var(--s12);
       padding: var(--s12);
-      border: 1px solid var(--borderSubtle);
-      border-radius: var(--r12);
-      background: #fff;
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      background: var(--card);
     }
     .switchMeta{
       display:flex;
       flex-direction:column;
-      gap: 2px;
+      gap: var(--s4);
     }
-    .switchMeta .l{ font-size: 13px; font-weight: 600; letter-spacing:-0.01em; }
-    .switchMeta .d{ font-size: 12px; color: var(--muted); }
+    .switchMeta .l{ font-size: 12px; font-weight: 600; letter-spacing:-0.01em; color: var(--text); }
+    .switchMeta .d{ font-size: 11px; color: var(--textMuted); }
 
     .toggle{
-      width: 42px;
-      height: 24px;
+      width: 40px;
+      height: 22px;
       border-radius: 999px;
-      background: rgba(0,0,0,0.10);
+      background: var(--surface);
       position: relative;
-      border: 1px solid var(--borderSubtle);
+      border: 0.5px solid var(--borderSubtle);
       cursor: pointer;
       flex: 0 0 auto;
     }
@@ -405,18 +456,21 @@
       position:absolute;
       top: 2px;
       left: 2px;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 999px;
-      background: #fff;
-      border: 1px solid var(--borderSubtle);
+      background: var(--card);
+      border: 0.5px solid var(--borderSubtle);
       transition: transform 150ms cubic-bezier(0.25,1,0.5,1);
     }
     .toggle.on{
       background: var(--text);
-      border-color: rgba(0,0,0,0.18);
+      border-color: var(--text);
     }
-    .toggle.on::after{ transform: translateX(18px); }
+    .toggle.on::after{ 
+      transform: translateX(18px);
+      background: var(--card);
+    }
 
     /* Custom select (no native select styling issues) */
     .select{
@@ -429,12 +483,12 @@
       align-items:center;
       justify-content:space-between;
       gap: var(--s12);
-      padding: 10px 12px;
-      border-radius: var(--r12);
-      border: 1px solid var(--border);
-      background: #fff;
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
       color: var(--text);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: -0.01em;
       cursor: pointer;
@@ -451,14 +505,14 @@
     }
     .menu{
       position:absolute;
-      top: calc(100% + 8px);
+      top: calc(100% + var(--s8));
       left: 0;
       right: 0;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: var(--r12);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-      padding: 8px;
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r8);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      padding: var(--s4);
       display:none;
       z-index: 50;
       max-height: 240px;
@@ -466,17 +520,17 @@
     }
     .menu.open{ display:block; }
     .opt{
-      padding: 10px 10px;
-      border-radius: var(--r8);
+      padding: var(--s8) var(--s8);
+      border-radius: var(--r6);
       cursor:pointer;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text);
       display:flex;
       justify-content:space-between;
       gap: var(--s12);
     }
-    .opt:hover{ background: rgba(0,0,0,0.03); }
-    .opt .hint{ color: var(--muted); font-weight: 500; font-size: 12px; }
+    .opt:hover{ background: var(--surface); }
+    .opt .hint{ color: var(--textMuted); font-weight: 500; font-size: 11px; }
     .opt.active{ background: var(--accentBg); color: var(--accent); }
 
     /* Log */
@@ -488,14 +542,14 @@
       overflow:auto;
     }
     .logItem{
-      padding: 10px 12px;
-      border-radius: var(--r12);
-      border: 1px solid var(--borderSubtle);
-      background: #fff;
-      font-size: 12px;
-      color: var(--muted);
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--borderSubtle);
+      background: var(--card);
+      font-size: 11px;
+      color: var(--textMuted);
     }
-    .logTime{ color: var(--faint); margin-right: 8px; font-variant-numeric: tabular-nums; }
+    .logTime{ color: var(--textFaint); margin-right: var(--s8); font-variant-numeric: tabular-nums; }
 
     /* Charts (fix infinite growth by hard-sizing containers) */
     .chartsGrid{
@@ -505,21 +559,23 @@
     }
     @media (max-width: 900px){ .chartsGrid{ grid-template-columns: 1fr; } }
     .chartBox{
-      border: 1px solid var(--borderSubtle);
-      border-radius: var(--r12);
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
       padding: var(--s16);
-      background: #fff;
+      background: var(--card);
       height: 320px; /* hard stop to prevent Chart.js resize feedback loops */
       display:flex;
       flex-direction:column;
       min-width:0;
     }
     .chartTitle{
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: -0.01em;
       margin-bottom: var(--s12);
       color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
     }
     .chartStage{
       position: relative;
@@ -732,14 +788,22 @@
         </div>
         <div id="m3-stats" style="margin-bottom: 15px; display: none;">
           <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
               <div>
                 <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
                 <div id="m3-average" style="font-size: 1.8em; font-weight: 600; color: var(--text);">—</div>
               </div>
-              <div style="text-align: right;">
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Latest Rating</div>
+                <div id="m3-latest-rating" style="font-size: 1.8em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div>
                 <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Total Ratings</div>
                 <div id="m3-total" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Last Interaction</div>
+                <div id="m3-last-interaction" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
               </div>
             </div>
             <div id="m3-chart" style="margin-top: 15px;">
@@ -753,42 +817,8 @@
       </div>
     </div>
 
-    <!-- Right: Controls + Debug + Log -->
+    <!-- Right: Debug + Log -->
     <div class="stack right">
-      <div class="card">
-        <div class="cardHeader">
-          <div>
-            <p class="title">Mock Mode</p>
-            <p class="subtitle">Simulate Modules 1–3 data</p>
-          </div>
-        </div>
-
-        <div class="switchRow">
-          <div class="switchMeta">
-            <div class="l">Mock mode</div>
-            <div class="d">Simulates Modules 1–3</div>
-          </div>
-          <div class="toggle" id="mock-toggle" role="switch" aria-checked="false" tabindex="0"></div>
-        </div>
-
-        <div id="mock-config" style="display:none; margin-top: var(--s12);" class="stack">
-          <div>
-            <p class="subtitle" style="margin-bottom: var(--s8);">Scenario</p>
-            <div class="select" id="sel-scenario"></div>
-          </div>
-          <div>
-            <p class="subtitle" style="margin-bottom: var(--s8);">Update speed</p>
-            <div class="select" id="sel-speed"></div>
-          </div>
-          <button class="btn" id="btn-send-mock" style="width: 100%; margin-top: var(--s8);">
-            Send Mock Data
-          </button>
-        </div>
-
-        <div style="height: var(--s12);"></div>
-        <div class="pill" id="control-status" style="display:none;"></div>
-      </div>
-
       <div class="card">
         <div class="cardHeader">
           <div>
@@ -807,10 +837,9 @@
           <span class="pill"><span class="dot" id="dot-m5"></span><span class="mono" id="dbg-m5">—</span></span>
         </div>
 
-        <button class="btn" id="btn-inspect">Toggle data inspector</button>
-        <div id="inspector" style="display:none; margin-top: var(--s12); border: 1px solid var(--border); border-radius: var(--r12); background:#0b0b0b; color:#e5e5e5; padding: var(--s12); max-height: 260px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; font-size: 12px; line-height: 1.5;">
-          <pre id="inspector-pre" style="margin:0; white-space: pre-wrap; word-break: break-word;">No data yet</pre>
-        </div>
+        <a href="/debug" class="btn" style="width: 100%; text-align: center; text-decoration: none; display: block; margin-top: var(--s12);">
+          Open Debug Page
+        </a>
       </div>
 
       <div class="card">
@@ -821,7 +850,9 @@
           </div>
           <span class="badge muted mono" id="log-count">0</span>
         </div>
-        <div class="log" id="log"></div>
+        <a href="/debug" class="btn" style="width: 100%; text-align: center; text-decoration: none; display: block; margin-top: var(--s12);">
+          Open Activity Log
+        </a>
       </div>
     </div>
 
@@ -869,6 +900,10 @@
       pollInterval: null,
       lastDataHash: null,
       charts: { hourly: null, weekly: null },
+      module3: {
+        lastRatingTimestamp: null,  // ISO timestamp string
+        latestRating: null
+      },
       health: {
         m1: { lastSeen: 0, source: null, mode: "idle" }, // idle|active|mock
         m2: { lastSeen: 0, source: null, mode: "idle" },
@@ -1084,10 +1119,7 @@
         document.getElementById("m5-alternatives").textContent = "None";
       }
 
-      // payload inspector
-      if(document.getElementById("inspector").style.display !== "none"){
-        document.getElementById("inspector-pre").textContent = JSON.stringify(data, null, 2);
-      }
+      // Inspector moved to /debug page
 
       // charts
       if(data.patterns) updateChartsFromModule5(data);
@@ -1250,6 +1282,8 @@
         const statsContainer = document.getElementById("m3-stats");
         const avgElement = document.getElementById("m3-average");
         const totalElement = document.getElementById("m3-total");
+        const latestRatingElement = document.getElementById("m3-latest-rating");
+        const lastInteractionElement = document.getElementById("m3-last-interaction");
         const chartElement = document.getElementById("m3-chart");
         
         if(statsContainer && avgElement && totalElement) {
@@ -1261,6 +1295,39 @@
             avgElement.style.color = stats.average_rating >= 4 ? "#10b981" : stats.average_rating >= 3 ? "#f59e0b" : "#ef4444";
           } else {
             avgElement.textContent = "—";
+          }
+          
+          // Update latest rating
+          if(latestRatingElement) {
+            if(stats.latest_rating !== null && stats.latest_rating !== undefined) {
+              const stars = "★".repeat(Math.max(0, Number(stats.latest_rating)));
+              latestRatingElement.innerHTML = `${stars} <span style="font-size: 0.6em; color: var(--muted);">(${stats.latest_rating}/5)</span>`;
+              latestRatingElement.style.color = stats.latest_rating >= 4 ? "#10b981" : stats.latest_rating >= 3 ? "#f59e0b" : "#ef4444";
+            } else {
+              latestRatingElement.textContent = "—";
+              latestRatingElement.style.color = "var(--text)";
+            }
+          }
+          
+          // Update time since last rating interaction
+          if(lastInteractionElement) {
+            if(stats.time_since_last_rating) {
+              lastInteractionElement.textContent = stats.time_since_last_rating;
+              lastInteractionElement.style.color = "var(--text)";
+              // Store timestamp for periodic updates
+              if(stats.last_rating_timestamp) {
+                state.module3.lastRatingTimestamp = stats.last_rating_timestamp;
+              }
+            } else {
+              lastInteractionElement.textContent = "Never";
+              lastInteractionElement.style.color = "var(--textMuted)";
+              state.module3.lastRatingTimestamp = null;
+            }
+          }
+          
+          // Store latest rating in state
+          if(stats.latest_rating !== null && stats.latest_rating !== undefined) {
+            state.module3.latestRating = stats.latest_rating;
           }
           
           // Update total ratings
@@ -1583,42 +1650,7 @@
     // Wire UI
     function wireUi(){
       document.getElementById("server-origin").textContent = window.location.origin;
-
-      const mockToggle = document.getElementById("mock-toggle");
-      const sendMockBtn = document.getElementById("btn-send-mock");
-
-      function toggleClick(el, fn){
-        el.addEventListener("click", fn);
-        el.addEventListener("keydown", (e)=>{ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); fn(); } });
-      }
-
-      toggleClick(mockToggle, () => {
-        state.mockActive = !state.mockActive;
-        setToggle("mock-toggle", state.mockActive);
-        document.getElementById("mock-config").style.display = state.mockActive ? "flex" : "none";
-        sendMockBtn.disabled = !state.mockActive;
-        if(state.mockActive){
-          startMock();
-        } else {
-          stopMock();
-        }
-      });
-
-      sendMockBtn.addEventListener("click", () => {
-        sendMockDataOnce();
-      });
-      
-      // Initially disable send button if mock is not active
-      sendMockBtn.disabled = !state.mockActive;
-
-      document.getElementById("btn-inspect").addEventListener("click", () => {
-        const pane = document.getElementById("inspector");
-        const next = pane.style.display === "none" ? "block" : "none";
-        pane.style.display = next;
-        if(next !== "none" && state.latestModule5){
-          document.getElementById("inspector-pre").textContent = JSON.stringify(state.latestModule5, null, 2);
-        }
-      });
+      // Mock mode moved to /debug page
     }
 
     // Socket events (same logic, plus snapshot handler)
@@ -1686,20 +1718,15 @@
     });
 
     socket.on("mock_status", (data) => {
-      // Reflect server-side state if already active
+      // Mock mode moved to /debug page - just update state for logging
       if(!data) return;
       if(data.active){
         state.mockActive = true;
         state.mockScenario = data.scenario || "normal";
         state.mockInterval = Number(data.update_interval || 30);
-        setToggle("mock-toggle", true);
-        document.getElementById("mock-config").style.display = "flex";
-        window.__scenarioSelect?.setValue(state.mockScenario);
-        window.__speedSelect?.setValue(String(state.mockInterval));
-        document.getElementById("btn-send-mock").disabled = false;
         log("Mock mode is active (server)");
       } else {
-        document.getElementById("btn-send-mock").disabled = true;
+        state.mockActive = false;
       }
     });
 
@@ -1847,6 +1874,42 @@
           statusElement.style.color = "#6b7280";
           log("Kiosk idle (no user detected)");
         }
+      }
+      
+      // Update latest rating and time since last interaction if available
+      const statsContainer = document.getElementById("m3-stats");
+      const latestRatingElement = document.getElementById("m3-latest-rating");
+      const lastInteractionElement = document.getElementById("m3-last-interaction");
+      
+      // Show stats container if we have rating data
+      if(statsContainer && (data.latest_rating !== null && data.latest_rating !== undefined || data.time_since_last_rating)) {
+        statsContainer.style.display = "block";
+      }
+      
+      if(latestRatingElement && data.latest_rating !== null && data.latest_rating !== undefined) {
+        const stars = "★".repeat(Math.max(0, Number(data.latest_rating)));
+        latestRatingElement.innerHTML = `${stars} <span style="font-size: 0.6em; color: var(--muted);">(${data.latest_rating}/5)</span>`;
+        latestRatingElement.style.color = data.latest_rating >= 4 ? "#10b981" : data.latest_rating >= 3 ? "#f59e0b" : "#ef4444";
+      }
+      
+      if(lastInteractionElement) {
+        if(data.time_since_last_rating) {
+          lastInteractionElement.textContent = data.time_since_last_rating;
+          lastInteractionElement.style.color = "var(--text)";
+          // Store timestamp for periodic updates
+          if(data.last_rating_timestamp) {
+            state.module3.lastRatingTimestamp = data.last_rating_timestamp;
+          }
+        } else {
+          lastInteractionElement.textContent = "Never";
+          lastInteractionElement.style.color = "var(--textMuted)";
+          state.module3.lastRatingTimestamp = null;
+        }
+      }
+      
+      // Store latest rating in state
+      if(data.latest_rating !== null && data.latest_rating !== undefined) {
+        state.module3.latestRating = data.latest_rating;
       }
     });
     
@@ -2039,30 +2102,7 @@
       setDot("dot-m5", "offline");
       document.getElementById("dbg-m5").textContent = "—";
 
-      window.__scenarioSelect = createSelect(
-        "sel-scenario",
-        [
-          { value: "empty", label: "Empty", hint: "0–1 people" },
-          { value: "light", label: "Light", hint: "1–3 people" },
-          { value: "normal", label: "Normal", hint: "4–6 people" },
-          { value: "busy", label: "Busy", hint: "6–8 people" },
-          { value: "full", label: "Full", hint: "8–10 people" }
-        ],
-        state.mockScenario,
-        (v) => { state.mockScenario = v; updateMockConfig(); }
-      );
-
-      window.__speedSelect = createSelect(
-        "sel-speed",
-        [
-          { value: "5", label: "Very fast", hint: "5s" },
-          { value: "10", label: "Fast", hint: "10s" },
-          { value: "30", label: "Normal", hint: "30s" },
-          { value: "60", label: "Slow", hint: "60s" }
-        ],
-        String(state.mockInterval),
-        (v) => { state.mockInterval = Number(v); updateMockConfig(); }
-      );
+      // Mock mode selects moved to /debug page
 
       updateKpis();
       log("Dashboard ready");
@@ -2096,6 +2136,31 @@
           document.getElementById("kpi-m5").textContent = "Waiting";
           setDot("dot-m5", "offline");
           document.getElementById("dbg-m5").textContent = "—";
+        }
+        
+        // Update time since last rating interaction (refresh every 30 seconds)
+        const lastInteractionElement = document.getElementById("m3-last-interaction");
+        if(lastInteractionElement && state.module3.lastRatingTimestamp) {
+          try {
+            const lastRatingDate = new Date(state.module3.lastRatingTimestamp);
+            const timeDiff = (Date.now() - lastRatingDate.getTime()) / 1000; // seconds
+            
+            let timeStr;
+            if(timeDiff < 60) {
+              timeStr = `${Math.floor(timeDiff)}s ago`;
+            } else if(timeDiff < 3600) {
+              timeStr = `${Math.floor(timeDiff / 60)}m ago`;
+            } else if(timeDiff < 86400) {
+              timeStr = `${Math.floor(timeDiff / 3600)}h ago`;
+            } else {
+              timeStr = `${Math.floor(timeDiff / 86400)}d ago`;
+            }
+            
+            lastInteractionElement.textContent = timeStr;
+            lastInteractionElement.style.color = "var(--text)";
+          } catch(e) {
+            console.warn("Error updating time since last rating:", e);
+          }
         }
       }, 2000);
     });
