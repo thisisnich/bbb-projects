@@ -1,0 +1,90 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point<br/>Wi-Fi Hub]
+    
+    %% Server
+    SERVER[PC Web Server<br/>Flask + Socket.IO<br/>Port 5000]
+    
+    %% Module 1: Crowd Intelligence Unit
+    subgraph M1["Module 1: Crowd Intelligence Unit"]
+        BBBW1[BBBW1 Board]
+        CAPE1[Mikroe Cape Board]
+        MIC1[MIC Click]
+        MOTION1[Motion Click]
+        OLED1[OLED Click]
+        PROX1[Proximity Click]
+        WEBCAM1[USB Webcam]
+        
+        BBBW1 --> CAPE1
+        CAPE1 --> MIC1
+        CAPE1 --> MOTION1
+        CAPE1 --> OLED1
+        CAPE1 --> PROX1
+        BBBW1 --> WEBCAM1
+    end
+    
+    %% Module 2: Environmental Conditions Station
+    subgraph M2["Module 2: Environmental Station"]
+        BBBW2[BBBW2 Board]
+        CAPE2[Mikroe Cape Board]
+        ENV2[Environment Click]
+        UV2[UV 3 Click]
+        BAR2[Bar Graph 2 Click]
+        OLED2[OLED Click]
+        
+        BBBW2 --> CAPE2
+        CAPE2 --> ENV2
+        CAPE2 --> UV2
+        CAPE2 --> BAR2
+        CAPE2 --> OLED2
+    end
+    
+    %% Module 3: Interactive Feedback Kiosk
+    subgraph M3["Module 3: Feedback Kiosk"]
+        BBBW3[BBBW3 Board]
+        CAPE3[Mikroe Cape Board]
+        GESTURE3[IR Gesture Click]
+        LEDMAT3[LED Matrix Click]
+        OLED3[OLED Click]
+        BUZZ3[Buzz 2 Click]
+        
+        BBBW3 --> CAPE3
+        CAPE3 --> GESTURE3
+        CAPE3 --> LEDMAT3
+        CAPE3 --> OLED3
+        CAPE3 --> BUZZ3
+    end
+    
+    %% Module 4: Security Dashboard
+    subgraph M4["Module 4: Security Dashboard"]
+        BBBW4[BBBW4 Board]
+        CAPE4[Mikroe Cape Board]
+        SEG4[7-Segment Click]
+        LEDMAT4[LED Matrix Click]
+        OLED4[OLED Click]
+        BUZZ4[Buzz 2 Click]
+        
+        BBBW4 --> CAPE4
+        CAPE4 --> SEG4
+        CAPE4 --> LEDMAT4
+        CAPE4 --> OLED4
+        CAPE4 --> BUZZ4
+    end
+    
+    %% Wireless connections
+    SERVER -.->|Wi-Fi| AP
+    BBBW1 -.->|Wi-Fi| AP
+    BBBW2 -.->|Wi-Fi| AP
+    BBBW3 -.->|Wi-Fi| AP
+    BBBW4 -.->|Wi-Fi| AP
+    
+    %% Styling
+    classDef server fill:#fff,stroke:#000,stroke-width:3px,color:#000
+    classDef client fill:#fff,stroke:#000,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#000,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    classDef module fill:#f9f9f9,stroke:#333,stroke-width:2px,color:#000
+    
+    class SERVER server
+    class BBBW1,BBBW2,BBBW3,BBBW4,CAPE1,CAPE2,CAPE3,CAPE4 client
+    class AP wireless
+    class M1,M2,M3,M4 module

@@ -1,0 +1,55 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point<br/>Wi-Fi Hub]
+    
+    %% Left: Server
+    SERVER[PC Web Server<br/>Flask + Socket.IO]
+    
+    %% Right: Client Hardware Chain
+    BBBW2[BBBW BOARD<br/>BeagleBone Black<br/>Wireless<br/>WIFI]
+    CAPE2[MIKROE CAPE BOARD<br/>BBBW2]
+    
+    %% Input Devices
+    ENV[ENVIRONMENT CLICK<br/>Temp, Humidity, Pressure, VOC<br/>I2C]
+    UV[UV 3 CLICK<br/>UV Index Sensor<br/>I2C]
+    
+    %% Output Devices
+    BAR[BAR GRAPH 2 CLICK<br/>LED Bar Display<br/>I2C/SPI]
+    OLED2[OLED CLICK<br/>128x64 Display<br/>I2C]
+    
+    %% Wireless connections (dashed lines)
+    SERVER -.->|Wi-Fi| AP
+    BBBW2 -.->|Wi-Fi| AP
+    
+    %% Hardware connections - Power/GND (red) and Signals (black)
+    BBBW2 <-->|PWR/GND| CAPE2
+    BBBW2 -->|DIGITAL SIGNAL| CAPE2
+    BBBW2 -->|ANALOG SIGNAL| CAPE2
+    CAPE2 -->|DIGITAL SIGNAL| BBBW2
+    CAPE2 -->|ANALOG SIGNAL| BBBW2
+    
+    %% Cape to Click modules - Power/GND (red) and Signals (black)
+    CAPE2 <-->|PWR/GND| ENV
+    ENV -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE2
+    
+    CAPE2 <-->|PWR/GND| UV
+    UV -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE2
+    
+    CAPE2 <-->|PWR/GND| BAR
+    BAR -->|DIGITAL SIGNAL<br/>I2C/SPI| CAPE2
+    
+    CAPE2 <-->|PWR/GND| OLED2
+    OLED2 -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE2
+    
+    %% Styling - Approachable colors matching image
+    classDef bbbw fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef cape fill:#90caf9,stroke:#0277bd,stroke-width:2px,color:#000
+    classDef click fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef server fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    
+    class BBBW2 bbbw
+    class CAPE2 cape
+    class ENV,UV,BAR,OLED2 click
+    class SERVER server
+    class AP wireless

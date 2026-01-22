@@ -1,0 +1,60 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point<br/>Wi-Fi Hub]
+    
+    %% Left: Server
+    SERVER[PC Web Server<br/>Flask + Socket.IO]
+    
+    %% Right: Client Hardware Chain
+    BBBW1[BBBW BOARD<br/>BeagleBone Black<br/>Wireless<br/>WIFI]
+    CAPE1[MIKROE CAPE BOARD<br/>BBBW1]
+    
+    %% Input Devices
+    MIC[MIC CLICK<br/>Audio Level Detection<br/>Analog/ADC]
+    MOTION[MOTION CLICK<br/>PIR Motion Sensor<br/>Digital GPIO]
+    PROX[PROXIMITY CLICK<br/>Proximity Sensor<br/>I2C/SPI]
+    WEBCAM[USB WEBCAM<br/>Video Capture<br/>USB Port]
+    
+    %% Output Devices
+    OLED1[OLED CLICK<br/>128x64 Display<br/>I2C]
+    
+    %% Wireless connections (dashed lines)
+    SERVER -.->|Wi-Fi| AP
+    BBBW1 -.->|Wi-Fi| AP
+    
+    %% Hardware connections - Power/GND (red) and Signals (black)
+    BBBW1 <-->|PWR/GND| CAPE1
+    BBBW1 -->|DIGITAL SIGNAL| CAPE1
+    BBBW1 -->|ANALOG SIGNAL| CAPE1
+    CAPE1 -->|DIGITAL SIGNAL| BBBW1
+    CAPE1 -->|ANALOG SIGNAL| BBBW1
+    
+    %% Cape to Click modules - Power/GND (red) and Signals (black)
+    CAPE1 <-->|PWR/GND| MIC
+    MIC -->|ANALOG SIGNAL| CAPE1
+    
+    CAPE1 <-->|PWR/GND| MOTION
+    MOTION -->|DIGITAL SIGNAL| CAPE1
+    
+    CAPE1 <-->|PWR/GND| OLED1
+    OLED1 -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE1
+    
+    CAPE1 <-->|PWR/GND| PROX
+    PROX -->|DIGITAL SIGNAL<br/>I2C/SPI| CAPE1
+    
+    BBBW1 -->|USB Connection| WEBCAM
+    
+    %% Styling - Approachable colors matching image
+    classDef bbbw fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef cape fill:#90caf9,stroke:#0277bd,stroke-width:2px,color:#000
+    classDef click fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef server fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    classDef usb fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#000
+    
+    class BBBW1 bbbw
+    class CAPE1 cape
+    class MIC,MOTION,PROX,OLED1 click
+    class SERVER server
+    class AP wireless
+    class WEBCAM usb

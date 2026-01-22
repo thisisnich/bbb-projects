@@ -1,0 +1,55 @@
+graph TB
+    %% Top: Access Point
+    AP[Access Point<br/>Wi-Fi Hub]
+    
+    %% Left: Server
+    SERVER[PC Web Server<br/>Flask + Socket.IO]
+    
+    %% Right: Client Hardware Chain
+    BBBW3[BBBW BOARD<br/>BeagleBone Black<br/>Wireless<br/>WIFI]
+    CAPE3[MIKROE CAPE BOARD<br/>BBBW3]
+    
+    %% Input Devices
+    GESTURE[IR GESTURE CLICK<br/>Gesture Sensor<br/>I2C]
+    
+    %% Output Devices
+    LEDMAT[LED MATRIX CLICK<br/>8x8 LED Matrix<br/>SPI]
+    OLED3[OLED CLICK<br/>128x64 Display<br/>I2C]
+    BUZZ1[BUZZ 2 CLICK<br/>Buzzer<br/>GPIO/PWM]
+    
+    %% Wireless connections (dashed lines)
+    SERVER -.->|Wi-Fi| AP
+    BBBW3 -.->|Wi-Fi| AP
+    
+    %% Hardware connections - Power/GND (red) and Signals (black)
+    BBBW3 <-->|PWR/GND| CAPE3
+    BBBW3 -->|DIGITAL SIGNAL| CAPE3
+    BBBW3 -->|ANALOG SIGNAL| CAPE3
+    CAPE3 -->|DIGITAL SIGNAL| BBBW3
+    CAPE3 -->|ANALOG SIGNAL| BBBW3
+    
+    %% Cape to Click modules - Power/GND (red) and Signals (black)
+    CAPE3 <-->|PWR/GND| GESTURE
+    GESTURE -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE3
+    
+    CAPE3 <-->|PWR/GND| LEDMAT
+    LEDMAT -->|DIGITAL SIGNAL<br/>SPI: CS/SCK/MISO/MOSI| CAPE3
+    
+    CAPE3 <-->|PWR/GND| OLED3
+    OLED3 -->|DIGITAL SIGNAL<br/>I2C: SCL/SDA| CAPE3
+    
+    CAPE3 <-->|PWR/GND| BUZZ1
+    BUZZ1 -->|DIGITAL SIGNAL<br/>GPIO/PWM| CAPE3
+    
+    %% Styling - Approachable colors matching image
+    classDef bbbw fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef cape fill:#90caf9,stroke:#0277bd,stroke-width:2px,color:#000
+    classDef click fill:#b3e5fc,stroke:#01579b,stroke-width:2px,color:#000
+    classDef server fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef wireless fill:#fff,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5,color:#000
+    
+    class BBBW3 bbbw
+    class CAPE3 cape
+    class GESTURE,LEDMAT,OLED3,BUZZ1 click
+    class SERVER server
+    class AP wireless

@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Debug & Activity — Smart Sports Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    :root{
+      --bg: #fafafa;
+      --card: #ffffff;
+      --text: #171717;
+      --muted: #737373;
+      --faint: #a3a3a3;
+      --border: rgba(0,0,0,0.08);
+      --borderSubtle: rgba(0,0,0,0.05);
+      --accent: #2563eb;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
+      --s4: 4px;
+      --s8: 8px;
+      --s12: 12px;
+      --s16: 16px;
+      --s24: 24px;
+      --s32: 32px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: var(--s24);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--s24);
+      padding-bottom: var(--s16);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .backLink {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s8);
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 150ms cubic-bezier(0.25,1,0.5,1);
+    }
+
+    .backLink:hover {
+      border-color: rgba(0,0,0,0.14);
+      transform: translateY(-1px);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--s24);
+    }
+
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s16);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r12);
+      padding: var(--s24);
+    }
+
+    .cardHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--s16);
+      padding-bottom: var(--s16);
+      border-bottom: 1px solid var(--borderSubtle);
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s8);
+      padding: 6px 10px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: var(--card);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .badge.muted { color: var(--muted); }
+
+    .inline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding: var(--s12) 0;
+      border-bottom: 1px solid var(--borderSubtle);
+    }
+
+    .inline:last-child { border-bottom: none; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s8);
+      padding: 6px 10px;
+      border-radius: var(--r8);
+      border: 1px solid var(--border);
+      background: var(--card);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--faint);
+    }
+
+    .dot.online { background: var(--success); }
+    .dot.offline { background: var(--danger); }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .inspector {
+      border: 1px solid var(--border);
+      border-radius: var(--r12);
+      background: #0b0b0b;
+      color: #e5e5e5;
+      padding: var(--s16);
+      max-height: 600px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .inspector pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s8);
+      max-height: 600px;
+      overflow: auto;
+    }
+
+    .logItem {
+      padding: var(--s12);
+      border-radius: var(--r12);
+      border: 1px solid var(--borderSubtle);
+      background: var(--card);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .logTime {
+      color: var(--faint);
+      margin-right: var(--s8);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .btn {
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      transition: border-color 150ms cubic-bezier(0.25,1,0.5,1), background-color 150ms cubic-bezier(0.25,1,0.5,1);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn:hover {
+      border-color: var(--border);
+      background: var(--bg);
+    }
+
+    .switchRow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding: var(--s12);
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      background: var(--card);
+    }
+
+    .switchMeta {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s4);
+    }
+
+    .switchMeta .l {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .switchMeta .d {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .toggle {
+      width: 40px;
+      height: 22px;
+      border-radius: 999px;
+      background: var(--bg);
+      position: relative;
+      border: 0.5px solid var(--borderSubtle);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 0.5px solid var(--borderSubtle);
+      transition: transform 150ms cubic-bezier(0.25,1,0.5,1);
+    }
+
+    .toggle.on {
+      background: var(--text);
+      border-color: var(--text);
+    }
+
+    .toggle.on::after {
+      transform: translateX(18px);
+      background: var(--card);
+    }
+
+    .select {
+      position: relative;
+      width: 100%;
+    }
+
+    .selectBtn {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .chev {
+      width: 12px;
+      height: 12px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      margin-top: -2px;
+      flex: 0 0 auto;
+    }
+
+    .menu {
+      position: absolute;
+      top: calc(100% + var(--s8));
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r8);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      padding: var(--s4);
+      display: none;
+      z-index: 50;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .menu.open {
+      display: block;
+    }
+
+    .opt {
+      padding: var(--s8) var(--s8);
+      border-radius: var(--r6);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      gap: var(--s12);
+    }
+
+    .opt:hover {
+      background: var(--bg);
+    }
+
+    .opt .hint {
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 11px;
+    }
+
+    .opt.active {
+      background: rgba(37,99,235,0.08);
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>Debug & Activity</h1>
+      <a href="/" class="backLink">← Back to Dashboard</a>
+    </div>
+
+    <div class="grid">
+      <!-- Mock Mode Panel -->
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Mock Mode</p>
+            <p class="subtitle">Simulate Modules 1–3 data</p>
+          </div>
+        </div>
+
+        <div class="switchRow">
+          <div class="switchMeta">
+            <div class="l">Mock mode</div>
+            <div class="d">Simulates Modules 1–3</div>
+          </div>
+          <div class="toggle" id="mock-toggle" role="switch" aria-checked="false" tabindex="0"></div>
+        </div>
+
+        <div id="mock-config" style="display:none; margin-top: var(--s12);" class="stack">
+          <div>
+            <p class="subtitle" style="margin-bottom: var(--s8);">Scenario</p>
+            <div class="select" id="sel-scenario"></div>
+          </div>
+          <div>
+            <p class="subtitle" style="margin-bottom: var(--s8);">Update speed</p>
+            <div class="select" id="sel-speed"></div>
+          </div>
+          <button class="btn" id="btn-send-mock" style="width: 100%; margin-top: var(--s8);">
+            Send Mock Data
+          </button>
+        </div>
+      </div>
+
+      <!-- Debug Panel -->
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Debug</p>
+            <p class="subtitle">Connection + payload inspector</p>
+          </div>
+          <span class="badge muted" id="dbg-conn">—</span>
+        </div>
+
+        <div class="inline">
+          <span class="subtitle">Server</span>
+          <span class="pill"><span class="dot" id="dot-dbg"></span><span class="mono" id="dbg-socket">—</span></span>
+        </div>
+        <div class="inline">
+          <span class="subtitle">Module 5</span>
+          <span class="pill"><span class="dot" id="dot-m5"></span><span class="mono" id="dbg-m5">—</span></span>
+        </div>
+
+        <div class="inspector" style="margin-top: var(--s16);">
+          <pre id="inspector-pre" class="mono">No data yet</pre>
+        </div>
+      </div>
+
+      <!-- Activity Panel -->
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Activity</p>
+            <p class="subtitle">Last 50 events</p>
+          </div>
+          <span class="badge muted mono" id="log-count">0</span>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let currentData = null;
+
+    // State for mock mode
+    const state = {
+      mockActive: false,
+      mockScenario: "normal",
+      mockInterval: 30
+    };
+
+    // Helper functions
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function setToggle(id, on) {
+      const el = document.getElementById(id);
+      if (on) {
+        el.classList.add("on");
+        el.setAttribute("aria-checked", "true");
+      } else {
+        el.classList.remove("on");
+        el.setAttribute("aria-checked", "false");
+      }
+    }
+
+    // Custom select helper
+    function createSelect(mountId, options, initialValue, onChange) {
+      const mount = document.getElementById(mountId);
+      const wrap = document.createElement("div");
+      wrap.className = "select";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "selectBtn";
+      btn.innerHTML = `<span class="mono" id="${mountId}-label"></span><span class="chev" aria-hidden="true"></span>`;
+
+      const menu = document.createElement("div");
+      menu.className = "menu";
+
+      function setValue(v) {
+        const found = options.find(o => o.value === v) || options[0];
+        document.getElementById(`${mountId}-label`).textContent = found.label;
+        menu.querySelectorAll(".opt").forEach(el => el.classList.remove("active"));
+        const active = menu.querySelector(`[data-value="${CSS.escape(found.value)}"]`);
+        if (active) active.classList.add("active");
+        onChange(found.value);
+      }
+
+      options.forEach(o => {
+        const opt = document.createElement("div");
+        opt.className = "opt";
+        opt.dataset.value = o.value;
+        opt.innerHTML = `<span>${escapeHtml(o.label)}</span>${o.hint ? `<span class="hint">${escapeHtml(o.hint)}</span>` : ""}`;
+        opt.addEventListener("click", () => {
+          menu.classList.remove("open");
+          setValue(o.value);
+        });
+        menu.appendChild(opt);
+      });
+
+      btn.addEventListener("click", () => {
+        menu.classList.toggle("open");
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!wrap.contains(e.target)) menu.classList.remove("open");
+      });
+
+      wrap.appendChild(btn);
+      wrap.appendChild(menu);
+      mount.replaceWith(wrap);
+      wrap.id = mountId;
+
+      setValue(initialValue);
+
+      return { setValue, getValue: () => options.find(o => document.getElementById(`${mountId}-label`).textContent === o.label)?.value };
+    }
+
+    // Mock mode functions
+    function startMock() {
+      socket.emit("start_mock_data", { scenario: state.mockScenario, update_interval: state.mockInterval }, () => {});
+      log(`Mock started (${state.mockScenario}, ${state.mockInterval}s)`);
+    }
+
+    function stopMock() {
+      socket.emit("stop_mock_data", {}, () => {});
+      log("Mock stopped");
+    }
+
+    function updateMockConfig() {
+      if (!state.mockActive) return;
+      socket.emit("update_mock_config", { scenario: state.mockScenario, update_interval: state.mockInterval }, () => {});
+      log(`Mock config updated (${state.mockScenario}, ${state.mockInterval}s)`);
+    }
+
+    function sendMockDataOnce() {
+      if (!state.mockActive) {
+        log("Mock mode must be active to send data");
+        return;
+      }
+      log(`Sending mock data (scenario: ${state.mockScenario})...`);
+      socket.emit("send_mock_data_once", { scenario: state.mockScenario }, (response) => {
+        if (response && response.status === 'success') {
+          log(`✓ Mock data sent: ${response.message}`);
+        } else {
+          log("✗ Failed to send mock data");
+        }
+      });
+    }
+
+    // Wire mock mode UI
+    function wireMockUi() {
+      const mockToggle = document.getElementById("mock-toggle");
+      const sendMockBtn = document.getElementById("btn-send-mock");
+
+      function toggleClick(el, fn) {
+        el.addEventListener("click", fn);
+        el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } });
+      }
+
+      toggleClick(mockToggle, () => {
+        state.mockActive = !state.mockActive;
+        setToggle("mock-toggle", state.mockActive);
+        document.getElementById("mock-config").style.display = state.mockActive ? "flex" : "none";
+        sendMockBtn.disabled = !state.mockActive;
+        if (state.mockActive) {
+          startMock();
+        } else {
+          stopMock();
+        }
+      });
+
+      sendMockBtn.addEventListener("click", () => {
+        sendMockDataOnce();
+      });
+
+      sendMockBtn.disabled = !state.mockActive;
+
+      // Create selects
+      window.__scenarioSelect = createSelect(
+        "sel-scenario",
+        [
+          { value: "empty", label: "Empty", hint: "0–1 people" },
+          { value: "light", label: "Light", hint: "1–3 people" },
+          { value: "normal", label: "Normal", hint: "4–6 people" },
+          { value: "busy", label: "Busy", hint: "6–8 people" },
+          { value: "full", label: "Full", hint: "8–10 people" }
+        ],
+        state.mockScenario,
+        (v) => { state.mockScenario = v; updateMockConfig(); }
+      );
+
+      window.__speedSelect = createSelect(
+        "sel-speed",
+        [
+          { value: "5", label: "Very fast", hint: "5s" },
+          { value: "10", label: "Fast", hint: "10s" },
+          { value: "30", label: "Normal", hint: "30s" },
+          { value: "60", label: "Slow", hint: "60s" }
+        ],
+        String(state.mockInterval),
+        (v) => { state.mockInterval = Number(v); updateMockConfig(); }
+      );
+    }
+
+    socket.on("connect", () => {
+      document.getElementById("dbg-socket").textContent = "connected";
+      document.getElementById("dot-dbg").classList.add("online");
+      document.getElementById("dot-dbg").classList.remove("offline");
+      document.getElementById("dbg-conn").textContent = "Live";
+      log("Connected to server");
+      wireMockUi();
+    });
+
+    socket.on("disconnect", () => {
+      document.getElementById("dbg-socket").textContent = "disconnected";
+      document.getElementById("dot-dbg").classList.remove("online");
+      document.getElementById("dot-dbg").classList.add("offline");
+      document.getElementById("dbg-conn").textContent = "Offline";
+      log("Disconnected from server");
+    });
+
+    socket.on("module_connected", (data) => {
+      log(`Module connected (${data.module_type || "unknown"}: ${data.module_id || "unknown"})`);
+    });
+
+    socket.on("DisplayUpdate", (data) => {
+      currentData = data;
+      updateInspector();
+      log("Module 5 display update received");
+    });
+
+    socket.on("module5_connected", (data) => {
+      document.getElementById("dbg-m5").textContent = data.module_id || "connected";
+      document.getElementById("dot-m5").classList.add("online");
+      document.getElementById("dot-m5").classList.remove("offline");
+      log(`Module 5 connected: ${data.module_id || "unknown"}`);
+    });
+
+    socket.on("module5_disconnected", () => {
+      document.getElementById("dbg-m5").textContent = "—";
+      document.getElementById("dot-m5").classList.remove("online");
+      document.getElementById("dot-m5").classList.add("offline");
+      log("Module 5 disconnected");
+    });
+
+    socket.on("mock_status", (data) => {
+      if (!data) return;
+      if (data.active) {
+        state.mockActive = true;
+        state.mockScenario = data.scenario || "normal";
+        state.mockInterval = Number(data.update_interval || 30);
+        setToggle("mock-toggle", true);
+        document.getElementById("mock-config").style.display = "flex";
+        window.__scenarioSelect?.setValue(state.mockScenario);
+        window.__speedSelect?.setValue(String(state.mockInterval));
+        document.getElementById("btn-send-mock").disabled = false;
+        log("Mock mode is active (server)");
+      } else {
+        document.getElementById("btn-send-mock").disabled = true;
+      }
+    });
+
+    function updateInspector() {
+      if (currentData) {
+        document.getElementById("inspector-pre").textContent = JSON.stringify(currentData, null, 2);
+      }
+    }
+
+    let logCount = 0;
+    function log(msg) {
+      logCount++;
+      const logEl = document.getElementById("log");
+      const item = document.createElement("div");
+      item.className = "logItem";
+      const time = new Date().toLocaleTimeString();
+      item.innerHTML = `<span class="logTime mono">${time}</span>${msg}`;
+      logEl.insertBefore(item, logEl.firstChild);
+      if (logEl.children.length > 50) {
+        logEl.removeChild(logEl.lastChild);
+      }
+      document.getElementById("log-count").textContent = logCount;
+    }
+
+    // Request current data on load
+    socket.on("connect", () => {
+      fetch("/api/current_data")
+        .then(r => r.json())
+        .then(data => {
+          if (data.module5) {
+            currentData = data.module5;
+            updateInspector();
+          }
+        })
+        .catch(e => console.error("Failed to fetch current data:", e));
+    });
+  </script>
+</body>
+</html>
