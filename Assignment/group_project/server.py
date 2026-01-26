@@ -15,7 +15,6 @@ from collections import defaultdict
 # AI Image Recognition (Claude API)
 ANTHROPIC_AVAILABLE = False
 anthropic_client = None
-anthropic_api_key = ''
 
 try:
     from anthropic import Anthropic
@@ -31,7 +30,7 @@ except Exception as e:
     traceback.print_exc()
 
 if ANTHROPIC_AVAILABLE:
-    # Get API key from environment variable first, then .env file, then hardcoded fallback
+    # Get API key from environment variable first, then .env file
     anthropic_api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     
     # Try to load from .env file if env var not set
@@ -52,11 +51,6 @@ if ANTHROPIC_AVAILABLE:
             print(f"[WARNING] Could not read .env file: {e}")
             import traceback
             traceback.print_exc()
-    
-    # Hardcoded fallback removed for security
-    # Set ANTHROPIC_API_KEY environment variable or use .env file
-    if not anthropic_api_key:
-        print("[WARNING] No API key found. Set ANTHROPIC_API_KEY environment variable or use .env file")
     
     if anthropic_api_key:
         try:
