@@ -850,6 +850,7 @@
           </div>
           <span class="badge muted mono" id="log-count">0</span>
         </div>
+        <div class="log" id="log"></div>
         <a href="/debug" class="btn" style="width: 100%; text-align: center; text-decoration: none; display: block; margin-top: var(--s12);">
           Open Activity Log
         </a>
@@ -918,12 +919,19 @@
 
     function log(message){
       const el = document.getElementById("log");
+      if(!el) {
+        console.warn("Log element not found, message:", message);
+        return;
+      }
       const item = document.createElement("div");
       item.className = "logItem";
       item.innerHTML = `<span class="logTime">[${nowTime()}]</span>${escapeHtml(message)}`;
       el.prepend(item);
       while(el.children.length > 50) el.removeChild(el.lastChild);
-      document.getElementById("log-count").textContent = String(Math.min(el.children.length, 50));
+      const logCountEl = document.getElementById("log-count");
+      if(logCountEl) {
+        logCountEl.textContent = String(Math.min(el.children.length, 50));
+      }
     }
 
     function escapeHtml(str){
