@@ -70,87 +70,151 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
-# --- Historical Data Storage ---
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
+# --- Comprehensive Data Storage System ---
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
 
-def load_history():
-    """Load historical data from JSON file - now stores raw entries with people_count and timestamp"""
+# Data storage files
+CROWD_DATA_FILE = os.path.join(DATA_DIR, 'crowd_history.json')
+ENVIRONMENT_DATA_FILE = os.path.join(DATA_DIR, 'environment_history.json')
+FEEDBACK_DATA_FILE = os.path.join(DATA_DIR, 'feedback_history.json')
+MODULE_STATES_FILE = os.path.join(DATA_DIR, 'module_states.json')
+CONNECTION_HISTORY_FILE = os.path.join(DATA_DIR, 'connection_history.json')
+
+# Legacy history file (for migration)
+LEGACY_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
+
+def load_json_file(filepath, default_value):
+    """Load JSON data from file, return default if file doesn't exist or error"""
     try:
-        if os.path.exists(HISTORY_FILE):
-            with open(HISTORY_FILE, 'r') as f:
-                data = json.load(f)
-                # New format: {"entries": [{"people_count": 5, "timestamp": "..."}, ...]}
-                if 'entries' in data:
-                    return data
-                # Legacy format migration: convert old format to new format
-                elif 'hourly' in data or 'weekly' in data:
-                    print("[INFO] Migrating legacy history format to new format")
-                    entries = []
-                    # Convert old hourly data
-                    if 'hourly' in data:
-                        for date_str, hours in data['hourly'].items():
-                            for hour_str, occupancy in hours.items():
-                                hour = int(hour_str)
-                                people_count = int(occupancy * 10)  # Approximate conversion
+        if os.path.exists(filepath):
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[WARNING] Could not load {filepath}: {e}")
+        import traceback
+        traceback.print_exc()
+    return default_value
+
+def save_json_file(filepath, data):
+    """Save JSON data to file"""
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[WARNING] Could not save {filepath}: {e}")
+        import traceback
+        traceback.print_exc()
+
+def load_crowd_history():
+    """Load all historical crowd data"""
+    data = load_json_file(CROWD_DATA_FILE, {'entries': []})
+    
+    # Migrate from legacy history.json if it exists
+    if os.path.exists(LEGACY_HISTORY_FILE) and len(data.get('entries', [])) == 0:
+        print("[INFO] Migrating legacy history.json to new format")
+        try:
+            legacy_data = load_json_file(LEGACY_HISTORY_FILE, {})
+            if 'entries' in legacy_data:
+                data['entries'] = legacy_data['entries']
+                save_json_file(CROWD_DATA_FILE, data)
+                print(f"[INFO] Migrated {len(data['entries'])} crowd entries from legacy file")
+            elif 'hourly' in legacy_data or 'weekly' in legacy_data:
+                # Convert old format
+                entries = []
+                if 'hourly' in legacy_data:
+                    for date_str, hours in legacy_data['hourly'].items():
+                        for hour_str, occupancy in hours.items():
+                            hour = int(hour_str)
+                            people_count = int(occupancy * 10)
+                            timestamp_str = f"{date_str}T{hour:02d}:00:00"
+                            entries.append({
+                                'people_count': people_count,
+                                'timestamp': timestamp_str
+                            })
+                if 'weekly' in legacy_data:
+                    for hour_str, days in legacy_data['weekly'].items():
+                        hour = int(hour_str)
+                        for day_name, occupancies in days.items():
+                            for occupancy in occupancies:
+                                today = datetime.now()
+                                days_offset = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].index(day_name)
+                                base_date = today - timedelta(days=(today.weekday() + 7 - days_offset) % 7)
+                                date_str = base_date.strftime('%Y-%m-%d')
+                                people_count = int(occupancy * 10)
                                 timestamp_str = f"{date_str}T{hour:02d}:00:00"
                                 entries.append({
                                     'people_count': people_count,
                                     'timestamp': timestamp_str
                                 })
-                    # Convert old weekly data
-                    if 'weekly' in data:
-                        for hour_str, days in data['weekly'].items():
-                            hour = int(hour_str)
-                            for day_name, occupancies in days.items():
-                                for occupancy in occupancies:
-                                    # Approximate date (use recent Monday as base)
-                                    today = datetime.now()
-                                    days_offset = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].index(day_name)
-                                    base_date = today - timedelta(days=(today.weekday() + 7 - days_offset) % 7)
-                                    date_str = base_date.strftime('%Y-%m-%d')
-                                    people_count = int(occupancy * 10)
-                                    timestamp_str = f"{date_str}T{hour:02d}:00:00"
-                                    entries.append({
-                                        'people_count': people_count,
-                                        'timestamp': timestamp_str
-                                    })
-                    return {'entries': entries}
-                return data
-    except Exception as e:
-        print(f"[WARNING] Could not load history file: {e}")
-        import traceback
-        traceback.print_exc()
+                data['entries'] = entries
+                save_json_file(CROWD_DATA_FILE, data)
+                print(f"[INFO] Migrated {len(entries)} crowd entries from legacy format")
+        except Exception as e:
+            print(f"[WARNING] Error migrating legacy history: {e}")
     
-    # Return default structure if file doesn't exist or error
-    return {
-        'entries': []  # List of {"people_count": int, "timestamp": "ISO string"}
-    }
+    return data
 
-def save_history(history_data):
-    """Save historical data to JSON file - stores raw entries with people_count and timestamp"""
-    try:
-        # Keep only entries from last 30 days to prevent file from growing too large
-        if 'entries' in history_data:
-            cutoff_date = datetime.now() - timedelta(days=30)
-            cutoff_str = cutoff_date.isoformat()
-            history_data['entries'] = [
-                e for e in history_data['entries'] 
-                if e.get('timestamp', '') >= cutoff_str
-            ]
-            # Sort by timestamp
-            history_data['entries'].sort(key=lambda x: x.get('timestamp', ''))
-        
-        with open(HISTORY_FILE, 'w') as f:
-            json.dump(history_data, f, indent=2)
-    except Exception as e:
-        print(f"[WARNING] Could not save history file: {e}")
+def save_crowd_history(data):
+    """Save all historical crowd data (keeps ALL records, no time limit)"""
+    # Sort by timestamp
+    if 'entries' in data:
+        data['entries'].sort(key=lambda x: x.get('timestamp', ''))
+    save_json_file(CROWD_DATA_FILE, data)
 
-def update_history(people_count, timestamp=None):
-    """Update historical data with new people count reading"""
+def load_environment_history():
+    """Load all historical environment data"""
+    return load_json_file(ENVIRONMENT_DATA_FILE, {'entries': []})
+
+def save_environment_history(data):
+    """Save all historical environment data (keeps ALL records)"""
+    # Sort by timestamp
+    if 'entries' in data:
+        data['entries'].sort(key=lambda x: x.get('timestamp', ''))
+    save_json_file(ENVIRONMENT_DATA_FILE, data)
+
+def load_feedback_history():
+    """Load all historical feedback data"""
+    return load_json_file(FEEDBACK_DATA_FILE, {'entries': []})
+
+def save_feedback_history(data):
+    """Save all historical feedback data (keeps ALL records)"""
+    # Sort by timestamp
+    if 'entries' in data:
+        data['entries'].sort(key=lambda x: x.get('timestamp', ''))
+    save_json_file(FEEDBACK_DATA_FILE, data)
+
+def load_module_states():
+    """Load module states"""
+    return load_json_file(MODULE_STATES_FILE, {
+        'module3_state': {
+            'last_rating_timestamp': None,
+            'latest_rating': None,
+            'kiosk_active': False
+        }
+    })
+
+def save_module_states(data):
+    """Save module states"""
+    save_json_file(MODULE_STATES_FILE, data)
+
+def load_connection_history():
+    """Load connection history"""
+    return load_json_file(CONNECTION_HISTORY_FILE, {'connections': []})
+
+def save_connection_history(data):
+    """Save connection history"""
+    # Keep last 1000 connections to prevent file from growing too large
+    if 'connections' in data and len(data['connections']) > 1000:
+        data['connections'] = data['connections'][-1000:]
+    save_json_file(CONNECTION_HISTORY_FILE, data)
+
+def add_crowd_entry(people_count, timestamp=None, full_data=None):
+    """Add a new crowd data entry to history"""
     if timestamp is None:
         timestamp = datetime.now()
     
-    history = load_history()
+    history = load_crowd_history()
     if 'entries' not in history:
         history['entries'] = []
     
@@ -169,13 +233,178 @@ def update_history(people_count, timestamp=None):
         should_add = people_diff >= 1 or time_diff >= 300
     
     if should_add:
-        history['entries'].append({
+        entry = {
             'people_count': int(people_count),
             'timestamp': timestamp_str
-        })
+        }
+        # Include full data if provided
+        if full_data:
+            entry['full_data'] = full_data
+        history['entries'].append(entry)
+        save_crowd_history(history)
     
-    save_history(history)
     return history
+
+def add_environment_entry(env_data, timestamp=None):
+    """Add a new environment data entry to history"""
+    if timestamp is None:
+        timestamp = datetime.now()
+    
+    history = load_environment_history()
+    if 'entries' not in history:
+        history['entries'] = []
+    
+    timestamp_str = timestamp.isoformat()
+    
+    # Always add environment data (less frequent updates)
+    entry = {
+        'timestamp': timestamp_str,
+        'data': env_data
+    }
+    history['entries'].append(entry)
+    save_environment_history(history)
+    
+    return history
+
+def add_feedback_entry(feedback_data, timestamp=None):
+    """Add a new feedback data entry to history"""
+    if timestamp is None:
+        timestamp = datetime.now()
+    
+    history = load_feedback_history()
+    if 'entries' not in history:
+        history['entries'] = []
+    
+    timestamp_str = timestamp.isoformat()
+    
+    # Always add feedback data (user interactions are important)
+    entry = {
+        'timestamp': timestamp_str,
+        'data': feedback_data
+    }
+    history['entries'].append(entry)
+    save_feedback_history(history)
+    
+    return history
+
+def add_connection_event(module_id, module_type, event_type, timestamp=None):
+    """Add a connection/disconnection event to history"""
+    if timestamp is None:
+        timestamp = datetime.now()
+    
+    history = load_connection_history()
+    if 'connections' not in history:
+        history['connections'] = []
+    
+    entry = {
+        'module_id': module_id,
+        'module_type': module_type,
+        'event': event_type,  # 'connected' or 'disconnected'
+        'timestamp': timestamp.isoformat()
+    }
+    history['connections'].append(entry)
+    save_connection_history(history)
+    
+    return history
+
+# Legacy function for backward compatibility
+def load_history():
+    """Legacy function - loads crowd history for backward compatibility"""
+    return load_crowd_history()
+
+def update_history(people_count, timestamp=None):
+    """Legacy function - updates crowd history for backward compatibility"""
+    return add_crowd_entry(people_count, timestamp)
+
+# --- Historical Data Retrieval Functions ---
+def get_latest_crowd_data():
+    """Get the most recent crowd data from history if current_data is None"""
+    if current_data.get('crowd'):
+        return current_data['crowd']
+    
+    # Fallback to historical data
+    history = load_crowd_history()
+    if 'entries' in history and len(history['entries']) > 0:
+        # Get most recent entry
+        latest_entry = history['entries'][-1]
+        # Reconstruct data structure
+        return {
+            'module_id': 'historical',
+            'module_type': 'crowd_detection',
+            'timestamp': latest_entry.get('timestamp'),
+            'data': {
+                'people_count': latest_entry.get('people_count', 0),
+                'crowd_level': 'empty' if latest_entry.get('people_count', 0) == 0 else 'normal',
+                'confidence': 0.85,
+                'source': 'historical'
+            }
+        }
+    return None
+
+def get_latest_environment_data():
+    """Get the most recent environment data from history if current_data is None"""
+    if current_data.get('environment'):
+        return current_data['environment']
+    
+    # Fallback to historical data
+    history = load_environment_history()
+    if 'entries' in history and len(history['entries']) > 0:
+        # Get most recent entry
+        latest_entry = history['entries'][-1]
+        # Reconstruct data structure
+        return {
+            'module_id': 'historical',
+            'module_type': 'environment',
+            'timestamp': latest_entry.get('timestamp'),
+            'data': latest_entry.get('data', {})
+        }
+    return None
+
+def get_recent_feedback_data(count=50):
+    """Get recent feedback data, combining current_data and history"""
+    feedback_list = current_data.get('feedback', []).copy()
+    
+    # If we have less than requested, get from history
+    if len(feedback_list) < count:
+        history = load_feedback_history()
+        if 'entries' in history:
+            # Get recent entries from history
+            recent_from_history = history['entries'][-count:]
+            for entry in recent_from_history:
+                # Check if not already in current_data
+                entry_data = entry.get('data', {})
+                if entry_data not in [f for f in feedback_list]:
+                    feedback_list.append(entry_data)
+            # Sort by timestamp and take most recent
+            feedback_list.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            return feedback_list[:count]
+    
+    return feedback_list
+
+def update_module_status(module_type, module_id, is_online=True):
+    """Update module online/offline status"""
+    if module_type not in module_status:
+        module_status[module_type] = {}
+    
+    if module_id not in module_status[module_type]:
+        module_status[module_type][module_id] = {}
+    
+    module_status[module_type][module_id]['online'] = is_online
+    module_status[module_type][module_id]['last_seen'] = datetime.now().isoformat()
+    
+    return module_status[module_type][module_id]
+
+def get_module_status_summary():
+    """Get summary of all module statuses"""
+    summary = {}
+    for module_type, modules in module_status.items():
+        summary[module_type] = {
+            'total': len(modules),
+            'online': sum(1 for m in modules.values() if m.get('online', False)),
+            'offline': sum(1 for m in modules.values() if not m.get('online', False)),
+            'modules': modules
+        }
+    return summary
 
 def get_today_hourly_pattern(history, current_hour, current_people_count, capacity=10):
     """Calculate hourly pattern for today from raw history entries - server-side calculation"""
@@ -256,10 +485,25 @@ def get_weekly_pattern(history, current_hour, current_people_count, capacity=10)
     
     return week_same_time
 
-# Initialize history on startup
-historical_data = load_history()
-entry_count = len(historical_data.get('entries', []))
-print(f"[INFO] Historical data loaded: {entry_count} entries tracked")
+# Initialize all historical data on startup
+historical_data = load_crowd_history()
+crowd_entry_count = len(historical_data.get('entries', []))
+
+environment_history = load_environment_history()
+env_entry_count = len(environment_history.get('entries', []))
+
+feedback_history = load_feedback_history()
+feedback_entry_count = len(feedback_history.get('entries', []))
+
+module_states = load_module_states()
+connection_history = load_connection_history()
+connection_count = len(connection_history.get('connections', []))
+
+print(f"[INFO] Historical data loaded:")
+print(f"  - Crowd data: {crowd_entry_count} entries")
+print(f"  - Environment data: {env_entry_count} entries")
+print(f"  - Feedback data: {feedback_entry_count} entries")
+print(f"  - Connection history: {connection_count} events")
 
 # --- Data Storage ---
 connected_modules = {
@@ -272,6 +516,14 @@ connected_modules = {
 # Track which socket IDs are display modules
 display_module_sockets = {}  # {socket_id: module_id}
 
+# Module status tracking (online/offline, last seen)
+module_status = {
+    'crowd_detection': {},  # {module_id: {'online': bool, 'last_seen': timestamp}}
+    'environment': {},
+    'feedback': {},
+    'display': {}
+}
+
 # Current data from each module type
 current_data = {
     'crowd': None,
@@ -279,12 +531,17 @@ current_data = {
     'feedback': []
 }
 
-# Module 3 specific tracking
-module3_state = {
+# Module 3 specific tracking (loaded from persistent storage)
+module3_state = module_states.get('module3_state', {
     'last_rating_timestamp': None,  # ISO timestamp of last rating interaction
     'latest_rating': None,  # Latest rating value (1-5)
     'kiosk_active': False  # Whether kiosk is currently in use
-}
+})
+
+def save_module3_state():
+    """Save module3 state to persistent storage"""
+    module_states['module3_state'] = module3_state
+    save_module_states(module_states)
 
 # --- Mock Mode State ---
 mock_state = {
@@ -660,9 +917,9 @@ def analyze_image():
         # Update current_data with AI analysis results
         current_data['crowd'] = crowd_data
         
-        # Update historical data with AI analysis result (save people_count, not occupancy)
+        # Save to persistent storage with full historical records
         global historical_data
-        historical_data = update_history(people_count)
+        historical_data = add_crowd_entry(people_count, datetime.now(), full_data=crowd_data)
         
         # Get historical patterns for graphs (calculated server-side from raw data)
         current_hour = datetime.now().hour
@@ -672,11 +929,15 @@ def analyze_image():
         
         # Generate complete Module 5 data for preview (merge with existing data if available)
         # Use generate_module5_from_modules to ensure complete data structure
+        # Use historical data as fallback if current data is missing
+        env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+        
         complete_module5_data = generate_module5_from_modules(
             court_id='basketball_a',
             crowd_data=crowd_data,  # Use the AI analysis crowd data
-            env_data=current_data.get('environment'),  # Include existing environment data if available
-            feedback_data=current_data.get('feedback') if current_data.get('feedback') else None
+            env_data=env_data_for_module5,
+            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
         )
         
         # Override the current section with AI analysis data to ensure it's displayed
@@ -723,22 +984,363 @@ def analyze_image():
 
 @app.route('/api/current_data')
 def get_current_data():
-    """API endpoint to get current data state for polling"""
-    # Always generate Module 5 data if we have any data from Modules 1-3
+    """API endpoint to get current data state for polling - uses historical data as fallback when modules offline"""
+    # Get data with historical fallback
+    crowd_data = get_latest_crowd_data()
+    env_data = get_latest_environment_data()
+    feedback_data = get_recent_feedback_data(50)
+    
+    # Always generate Module 5 data if we have any data (current or historical)
     module5_data = None
-    if current_data.get('crowd') or current_data.get('environment'):
+    if crowd_data or env_data:
         module5_data = generate_module5_from_modules(
             court_id='basketball_a',
-            crowd_data=current_data.get('crowd'),
-            env_data=current_data.get('environment'),
-            feedback_data=current_data.get('feedback') if current_data.get('feedback') else None
+            crowd_data=crowd_data,
+            env_data=env_data,
+            feedback_data=feedback_data if feedback_data else None
         )
     
+    # Get module status
+    module_status_summary = get_module_status_summary()
+    
     return jsonify({
-        'crowd': current_data.get('crowd'),
-        'environment': current_data.get('environment'),
-        'feedback': current_data.get('feedback', [])[-1] if current_data.get('feedback') else None,
+        'crowd': crowd_data,
+        'environment': env_data,
+        'feedback': feedback_data[-1] if feedback_data else None,
+        'feedback_recent': feedback_data[:10] if feedback_data else [],
         'module5': module5_data,
+        'module_status': module_status_summary,
+        'timestamp': datetime.now().isoformat()
+    })
+
+# --- Historical Data API Endpoints ---
+@app.route('/api/history/crowd')
+def get_crowd_history():
+    """Get historical crowd data with optional filters"""
+    try:
+        days = int(request.args.get('days', 7))  # Default: last 7 days
+        limit = int(request.args.get('limit', 1000))  # Default: max 1000 entries
+        
+        history = load_crowd_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        # Limit results
+        entries = entries[-limit:] if len(entries) > limit else entries
+        
+        return jsonify({
+            'entries': entries,
+            'count': len(entries),
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history/environment')
+def get_environment_history():
+    """Get historical environment data with optional filters"""
+    try:
+        days = int(request.args.get('days', 7))  # Default: last 7 days
+        limit = int(request.args.get('limit', 1000))  # Default: max 1000 entries
+        
+        history = load_environment_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        # Limit results
+        entries = entries[-limit:] if len(entries) > limit else entries
+        
+        return jsonify({
+            'entries': entries,
+            'count': len(entries),
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history/feedback')
+def get_feedback_history():
+    """Get historical feedback data with optional filters"""
+    try:
+        days = int(request.args.get('days', 30))  # Default: last 30 days
+        limit = int(request.args.get('limit', 500))  # Default: max 500 entries
+        
+        history = load_feedback_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        # Limit results
+        entries = entries[-limit:] if len(entries) > limit else entries
+        
+        return jsonify({
+            'entries': entries,
+            'count': len(entries),
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Analytics API Endpoints ---
+@app.route('/api/analytics/crowd')
+def get_crowd_analytics():
+    """Get crowd analytics (statistics, trends, hourly patterns)"""
+    try:
+        days = int(request.args.get('days', 7))
+        
+        history = load_crowd_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        if not entries:
+            return jsonify({
+                'statistics': {},
+                'hourly_average': [],
+                'daily_average': [],
+                'trends': {}
+            })
+        
+        # Calculate statistics
+        people_counts = [e.get('people_count', 0) for e in entries]
+        stats = {
+            'total_readings': len(entries),
+            'average': round(sum(people_counts) / len(people_counts), 2) if people_counts else 0,
+            'min': min(people_counts) if people_counts else 0,
+            'max': max(people_counts) if people_counts else 0,
+            'median': sorted(people_counts)[len(people_counts) // 2] if people_counts else 0
+        }
+        
+        # Hourly averages
+        hourly_data = defaultdict(list)
+        for entry in entries:
+            try:
+                entry_dt = datetime.fromisoformat(entry.get('timestamp', ''))
+                hour = entry_dt.hour
+                hourly_data[hour].append(entry.get('people_count', 0))
+            except:
+                continue
+        
+        hourly_average = []
+        for hour in range(24):
+            if hour in hourly_data:
+                avg = sum(hourly_data[hour]) / len(hourly_data[hour])
+                hourly_average.append({'hour': hour, 'average': round(avg, 2), 'count': len(hourly_data[hour])})
+            else:
+                hourly_average.append({'hour': hour, 'average': 0, 'count': 0})
+        
+        # Daily averages
+        daily_data = defaultdict(list)
+        for entry in entries:
+            try:
+                entry_dt = datetime.fromisoformat(entry.get('timestamp', ''))
+                date_str = entry_dt.strftime('%Y-%m-%d')
+                daily_data[date_str].append(entry.get('people_count', 0))
+            except:
+                continue
+        
+        daily_average = []
+        for date_str in sorted(daily_data.keys()):
+            avg = sum(daily_data[date_str]) / len(daily_data[date_str])
+            daily_average.append({'date': date_str, 'average': round(avg, 2), 'count': len(daily_data[date_str])})
+        
+        # Trends (compare last 3 days vs previous 3 days)
+        if len(entries) > 10:
+            mid_point = len(entries) // 2
+            recent = entries[mid_point:]
+            previous = entries[:mid_point]
+            
+            recent_avg = sum(e.get('people_count', 0) for e in recent) / len(recent) if recent else 0
+            previous_avg = sum(e.get('people_count', 0) for e in previous) / len(previous) if previous else 0
+            
+            trend = 'increasing' if recent_avg > previous_avg else 'decreasing' if recent_avg < previous_avg else 'stable'
+            change_percent = ((recent_avg - previous_avg) / previous_avg * 100) if previous_avg > 0 else 0
+        else:
+            trend = 'insufficient_data'
+            change_percent = 0
+        
+        return jsonify({
+            'statistics': stats,
+            'hourly_average': hourly_average,
+            'daily_average': daily_average,
+            'trends': {
+                'direction': trend,
+                'change_percent': round(change_percent, 2)
+            },
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/environment')
+def get_environment_analytics():
+    """Get environment analytics (temperature, humidity trends)"""
+    try:
+        days = int(request.args.get('days', 7))
+        
+        history = load_environment_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        if not entries:
+            return jsonify({
+                'temperature': {},
+                'humidity': {},
+                'comfort_score': {},
+                'hourly_average': []
+            })
+        
+        # Extract data
+        temps = []
+        humidities = []
+        comfort_scores = []
+        
+        for entry in entries:
+            data = entry.get('data', {})
+            if 'temperature_c' in data:
+                temps.append(data['temperature_c'])
+            if 'humidity_percent' in data:
+                humidities.append(data['humidity_percent'])
+            if 'comfort_score' in data:
+                comfort_scores.append(data['comfort_score'])
+        
+        # Calculate statistics
+        temp_stats = {
+            'average': round(sum(temps) / len(temps), 2) if temps else None,
+            'min': min(temps) if temps else None,
+            'max': max(temps) if temps else None
+        }
+        
+        humidity_stats = {
+            'average': round(sum(humidities) / len(humidities), 2) if humidities else None,
+            'min': min(humidities) if humidities else None,
+            'max': max(humidities) if humidities else None
+        }
+        
+        comfort_stats = {
+            'average': round(sum(comfort_scores) / len(comfort_scores), 2) if comfort_scores else None,
+            'min': min(comfort_scores) if comfort_scores else None,
+            'max': max(comfort_scores) if comfort_scores else None
+        }
+        
+        # Hourly averages for temperature
+        hourly_temp = defaultdict(list)
+        for entry in entries:
+            try:
+                entry_dt = datetime.fromisoformat(entry.get('timestamp', ''))
+                hour = entry_dt.hour
+                data = entry.get('data', {})
+                if 'temperature_c' in data:
+                    hourly_temp[hour].append(data['temperature_c'])
+            except:
+                continue
+        
+        hourly_average = []
+        for hour in range(24):
+            if hour in hourly_temp:
+                avg = sum(hourly_temp[hour]) / len(hourly_temp[hour])
+                hourly_average.append({'hour': hour, 'temperature': round(avg, 2), 'count': len(hourly_temp[hour])})
+            else:
+                hourly_average.append({'hour': hour, 'temperature': None, 'count': 0})
+        
+        return jsonify({
+            'temperature': temp_stats,
+            'humidity': humidity_stats,
+            'comfort_score': comfort_stats,
+            'hourly_average': hourly_average,
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/feedback')
+def get_feedback_analytics():
+    """Get feedback analytics (ratings, trends, distribution)"""
+    try:
+        days = int(request.args.get('days', 30))
+        
+        history = load_feedback_history()
+        entries = history.get('entries', [])
+        
+        # Filter by date
+        if days > 0:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_str = cutoff_date.isoformat()
+            entries = [e for e in entries if e.get('timestamp', '') >= cutoff_str]
+        
+        # Extract ratings
+        ratings = []
+        text_feedback = []
+        
+        for entry in entries:
+            data = entry.get('data', {})
+            if data.get('report_type') == 'rating' and 'rating' in data:
+                ratings.append(data['rating'])
+            elif data.get('report_type') == 'text':
+                text_feedback.append(data)
+        
+        # Calculate statistics
+        rating_stats = {}
+        if ratings:
+            rating_stats = {
+                'total': len(ratings),
+                'average': round(sum(ratings) / len(ratings), 2),
+                'min': min(ratings),
+                'max': max(ratings),
+                'distribution': {i: ratings.count(i) for i in range(1, 6)}
+            }
+        
+        # Text feedback categories
+        categories = defaultdict(int)
+        for feedback in text_feedback:
+            category = feedback.get('issue_category', 'other')
+            categories[category] += 1
+        
+        return jsonify({
+            'ratings': rating_stats,
+            'text_feedback_count': len(text_feedback),
+            'categories': dict(categories),
+            'total_feedback': len(entries),
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/module_status')
+def get_module_status_api():
+    """Get current status of all modules"""
+    return jsonify({
+        'status': get_module_status_summary(),
+        'connected_modules': connected_modules,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -753,6 +1355,8 @@ def handle_module_register(data):
     if module_type in connected_modules:
         if module_id not in connected_modules[module_type]:
             connected_modules[module_type].append(module_id)
+            # Save connection event to history
+            add_connection_event(module_id, module_type, 'connected')
         print(f"[{datetime.now()}] Module registered: {module_id} ({module_type})")
         
         # Track display module sockets
@@ -782,7 +1386,11 @@ def handle_crowd_data(data):
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
     
-    # Update historical data with new reading
+    # Update module status
+    module_id = data.get('module_id', 'unknown')
+    update_module_status('crowd_detection', module_id, is_online=True)
+    
+    # Save to persistent storage with full historical records
     if 'data' in data:
         people_count = data['data'].get('people_count', 0)
         occupancy = min(1.0, people_count / 10.0)
@@ -794,19 +1402,23 @@ def handle_crowd_data(data):
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()
-        # Save people_count to history, not occupancy
+        # Save to persistent storage with full data
         global historical_data
-        historical_data = update_history(people_count, timestamp)
+        historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
     
     socketio.emit('crowd_update', data)
     
-    # Generate and send Module 5 data based on current Modules 1-3 data
+    # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
     court_id = data.get('court_id', 'basketball_a')
+    # Use historical data as fallback if current data is missing
+    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+    
     module5_data = generate_module5_from_modules(
         court_id=court_id,
         crowd_data=data,
-        env_data=current_data['environment'],
-        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+        env_data=env_data_for_module5,
+        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
     )
     
     # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
@@ -835,6 +1447,8 @@ def handle_crowd_video(data):
     module_type = 'crowd_detection'
     if module_id != 'unknown' and module_id not in connected_modules[module_type]:
         connected_modules[module_type].append(module_id)
+        # Save connection event to history
+        add_connection_event(module_id, module_type, 'connected')
         print(f"[{datetime.now()}] Auto-registered module from video frame: {module_id} ({module_type})")
         
         # Notify dashboard of new connection
@@ -901,12 +1515,38 @@ def handle_crowd_video(data):
                     current_data['crowd'].update(data)
                 else:
                     current_data['crowd'] = data
+                # Save to persistent storage
+                if 'data' in data and data['data']:
+                    people_count = data.get('data', {}).get('people_count', 0)
+                    timestamp_str = data.get('timestamp')
+                    if timestamp_str:
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        except:
+                            timestamp = datetime.now()
+                    else:
+                        timestamp = datetime.now()
+                    global historical_data
+                    historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
         else:
             # No AI analysis to preserve - update normally
             if current_data['crowd']:
                 current_data['crowd'].update(data)
             else:
                 current_data['crowd'] = data
+            # Save to persistent storage
+            if 'data' in data and data['data']:
+                people_count = data.get('data', {}).get('people_count', 0)
+                timestamp_str = data.get('timestamp')
+                if timestamp_str:
+                    try:
+                        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    except:
+                        timestamp = datetime.now()
+                else:
+                    timestamp = datetime.now()
+                global historical_data
+                historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
     
     # Emit with video_frame at top level for frontend
     socketio.emit('crowd_video_update', video_frame_data)
@@ -915,12 +1555,16 @@ def handle_crowd_video(data):
     # This ensures Module 5 gets updated when video frame data arrives
     if 'data' in data and data['data']:
         court_id = data.get('court_id', 'basketball_a')
-        # Use current crowd data (which may have been updated above)
+        # Use current crowd data (which may have been updated above) with historical fallback
+        crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
+        env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+        
         module5_data = generate_module5_from_modules(
             court_id=court_id,
-            crowd_data=current_data.get('crowd'),
-            env_data=current_data.get('environment'),
-            feedback_data=current_data['feedback'] if current_data['feedback'] else None
+            crowd_data=crowd_data_for_module5,
+            env_data=env_data_for_module5,
+            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
         )
         socketio.emit('DisplayUpdate', module5_data)
         print(f"[{datetime.now()}] Module 5 data generated from Module 1 video frame and sent to dashboard")
@@ -931,15 +1575,38 @@ def handle_environment_data(data):
     """Receive environment sensor data from Module 2"""
     print(f"[{datetime.now()}] Received Environment Data: {data}")
     current_data['environment'] = data
+    
+    # Update module status
+    module_id = data.get('module_id', 'unknown')
+    update_module_status('environment', module_id, is_online=True)
+    
+    # Save to persistent storage with full historical records
+    timestamp_str = data.get('timestamp')
+    if timestamp_str:
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        except:
+            timestamp = datetime.now()
+    else:
+        timestamp = datetime.now()
+    
+    # Extract environment data for storage
+    env_data_to_store = data.get('data', {}) if 'data' in data else data
+    add_environment_entry(env_data_to_store, timestamp)
+    
     socketio.emit('environment_update', data)
     
-    # Generate and send Module 5 data based on current Modules 1-3 data
+    # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
     court_id = data.get('court_id', 'basketball_a')
+    # Use historical data as fallback if current data is missing
+    crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
+    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+    
     module5_data = generate_module5_from_modules(
         court_id=court_id,
-        crowd_data=current_data['crowd'],
+        crowd_data=crowd_data_for_module5,
         env_data=data,
-        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
     )
     
     # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
@@ -967,8 +1634,9 @@ def handle_feedback_status(data):
     status = 'active' if is_active else 'idle'
     distance = data.get('distance_cm')
     
-    # Update module3_state
+    # Update module3_state and persist
     module3_state['kiosk_active'] = is_active
+    save_module3_state()
     
     print(f"[{datetime.now()}] Module 3 Status: {module_id} is {status}" + 
           (f" (distance: {distance:.1f}cm)" if distance else ""))
@@ -1010,10 +1678,26 @@ def handle_feedback_status(data):
 def handle_feedback_data(data):
     """Receive feedback data from Module 3"""
     print(f"[{datetime.now()}] Received Feedback Data: {data}")
-    # Store feedback in list (keep last 50 entries)
+    # Store feedback in list (keep last 50 entries in memory for quick access)
     current_data['feedback'].append(data)
     if len(current_data['feedback']) > 50:
         current_data['feedback'].pop(0)
+    
+    # Update module status
+    module_id = data.get('module_id', 'unknown')
+    update_module_status('feedback', module_id, is_online=True)
+    
+    # Save to persistent storage with full historical records
+    timestamp_str = data.get('timestamp')
+    if timestamp_str:
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        except:
+            timestamp = datetime.now()
+    else:
+        timestamp = datetime.now()
+    
+    add_feedback_entry(data, timestamp)
     
     # Track latest rating and timestamp if this is a rating interaction
     feedback_data = data.get('data', {})
@@ -1022,6 +1706,7 @@ def handle_feedback_data(data):
         if rating is not None:
             module3_state['latest_rating'] = rating
             module3_state['last_rating_timestamp'] = datetime.now().isoformat()
+            save_module3_state()  # Persist state change
             print(f"[{datetime.now()}] Module 3: Latest rating updated to {rating}/5")
     
     # Calculate average rating from all feedback entries
@@ -1076,15 +1761,20 @@ def handle_feedback_data(data):
     
     socketio.emit('feedback_update', update_data)
     
-    # Generate and send Module 5 data based on current Modules 1-3 data
-    # (Only update if we have crowd or environment data, otherwise feedback alone isn't enough)
-    if current_data['crowd'] or current_data['environment']:
+    # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
+    # Use historical data as fallback if current data is missing
+    crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
+    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+    
+    if crowd_data_for_module5 or env_data_for_module5:
         court_id = data.get('court_id', 'basketball_a')
+        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+        
         module5_data = generate_module5_from_modules(
             court_id=court_id,
-            crowd_data=current_data['crowd'],
-            env_data=current_data['environment'],
-            feedback_data=current_data['feedback'] if current_data['feedback'] else None
+            crowd_data=crowd_data_for_module5,
+            env_data=env_data_for_module5,
+            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
         )
         socketio.emit('DisplayUpdate', module5_data)
         print(f"[{datetime.now()}] Module 5 data generated from Module 3 data and sent to dashboard")
@@ -1629,27 +2319,22 @@ def handle_send_mock_data_once(data=None):
     env_data = generate_mock_environment_data(scenario)
     feedback_data = generate_mock_feedback_data(scenario)
     
-    # Store data first
-    current_data['crowd'] = crowd_data
-    current_data['environment'] = env_data
-    current_data['feedback'].append(feedback_data)
-    if len(current_data['feedback']) > 50:
-        current_data['feedback'].pop(0)
-    
-    # Emit update events directly to ensure they're broadcast
-    socketio.emit('crowd_update', crowd_data)
-    socketio.emit('environment_update', env_data)
-    socketio.emit('feedback_update', feedback_data)
+    # Process through handlers to ensure data is saved to persistent storage
+    handle_crowd_data(crowd_data)
+    handle_environment_data(env_data)
+    handle_feedback_data(feedback_data)
     
     print(f"[{datetime.now()}] Emitted crowd_update, environment_update, feedback_update events")
     
-    # Generate and send Module 5 data
+    # Generate and send Module 5 data (with historical fallback for feedback)
     court_id = 'basketball_a'
+    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+    
     module5_data = generate_module5_from_modules(
         court_id=court_id,
         crowd_data=crowd_data,
         env_data=env_data,
-        feedback_data=current_data['feedback'] if current_data['feedback'] else None
+        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
     )
     
     # Emit DisplayUpdate to all clients
@@ -1697,11 +2382,18 @@ def test_disconnect():
     # Check if this was a display module
     if socket_id in display_module_sockets:
         module_id = display_module_sockets[socket_id]
+        module_type = 'display'
         # Remove from connected modules
         if module_id in connected_modules['display']:
             connected_modules['display'].remove(module_id)
         # Remove from socket tracking
         del display_module_sockets[socket_id]
+        
+        # Update module status to offline
+        update_module_status(module_type, module_id, is_online=False)
+        
+        # Save disconnection event to history
+        add_connection_event(module_id, module_type, 'disconnected')
         
         # Emit disconnect event for Module 5
         socketio.emit('module5_display_disconnected', {
@@ -1710,6 +2402,12 @@ def test_disconnect():
             'count': len(connected_modules['display'])
         })
         print(f"[{datetime.now()}] Module 5 display disconnected: {module_id}")
+    else:
+        # Try to find and mark other module types as offline
+        # Note: We need to track socket_id to module_id mapping for non-display modules
+        # For now, we'll mark modules as offline based on connection history
+        # In a production system, you'd maintain a socket_id -> module_id mapping
+        pass
 
 if __name__ == '__main__':
     import socket
