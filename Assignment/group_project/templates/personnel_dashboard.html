@@ -1,0 +1,2387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Sports Dashboard - Personnel</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      /* Pure neutrals (Boldness & Clarity) - High contrast, dramatic negative space */
+      --bg: #ffffff;
+      --card: #ffffff;
+      --surface: #fafafa;
+      --text: #0a0a0a;
+      --textSecondary: #525252;
+      --textMuted: #737373;
+      --textFaint: #a3a3a3;
+      --border: rgba(0,0,0,0.12);
+      --borderSubtle: rgba(0,0,0,0.06);
+
+      /* Accent (one) - Blue for trust */
+      --accent: #2563eb;
+      --accentBg: rgba(37,99,235,0.08);
+      --accentBorder: rgba(37,99,235,0.2);
+
+      /* Semantic colors - for meaning only */
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #ea580c;
+
+      /* 4px Grid System */
+      --s4: 4px;
+      --s8: 8px;
+      --s12: 12px;
+      --s16: 16px;
+      --s24: 24px;
+      --s32: 32px;
+
+      /* Border Radius - Consistent system (sharp: 4px, 6px, 8px) */
+      --r4: 4px;
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Layout */
+    .wrap {
+      max-width: 1640px;
+      margin: 0 auto;
+      padding: var(--s24);
+      display: grid;
+      gap: var(--s24);
+      grid-template-areas:
+        "header header header"
+        "left main right"
+        "charts charts charts";
+      grid-template-columns: 360px 1fr 380px;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh;
+    }
+
+    @media (max-width: 1200px) {
+      .wrap{
+        grid-template-areas:
+          "header header"
+          "left main"
+          "right right"
+          "charts charts";
+        grid-template-columns: 340px 1fr;
+      }
+    }
+    @media (max-width: 900px) {
+      .wrap{
+        padding: var(--s16);
+        gap: var(--s16);
+        grid-template-areas:
+          "header"
+          "left"
+          "main"
+          "right"
+          "charts";
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Cards - Borders-only approach (no shadows) */
+    .card {
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r8);
+      padding: var(--s24);
+      min-width: 0;
+    }
+    .card.flat {
+      border: none;
+      padding: 0;
+    }
+    .cardHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s12);
+      padding-bottom: var(--s16);
+      border-bottom: 1px solid var(--borderSubtle);
+      margin-bottom: var(--s16);
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+    .subtitle {
+      font-size: 12px;
+      color: var(--textMuted);
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* Header */
+    .header { grid-area: header; padding: var(--s24); }
+    .headerRow{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: var(--s16);
+    }
+    .brand{
+      display:flex;
+      flex-direction:column;
+      gap: var(--s4);
+    }
+    .brand h1{
+      margin:0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .metaRow{
+      display:flex;
+      align-items:center;
+      gap: var(--s12);
+      color: var(--textMuted);
+      font-size: 12px;
+      margin-top: var(--s8);
+      font-weight: 500;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap: var(--s8);
+      padding: var(--s4) var(--s8);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--textMuted);
+      white-space: nowrap;
+    }
+    .dot{
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--faint);
+    }
+    .dot.online{ background: var(--success); }
+    .dot.offline{ background: var(--danger); }
+
+    .kpis{
+      margin-top: var(--s16);
+      display:grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: var(--s12);
+    }
+    @media (max-width: 900px){
+      .kpis{ grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+    }
+    .kpi{
+      padding: var(--s16);
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      background: var(--card);
+    }
+    .kpiLabel{ 
+      font-size: 11px; 
+      color: var(--textMuted); 
+      margin-bottom: var(--s8); 
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .kpiValue{ 
+      font-size: 20px; 
+      font-weight: 700; 
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .mono{ 
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-variant-numeric: tabular-nums; 
+      font-feature-settings: "tnum" 1; 
+    }
+
+    /* Panels */
+    .left { grid-area: left; }
+    .main { grid-area: main; }
+    .right { grid-area: right; }
+    .charts { grid-area: charts; }
+
+    .stack{ display:flex; flex-direction:column; gap: var(--s16); }
+
+    /* Module 5 Preview */
+    .sectionTitleRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: var(--s12);
+      margin-bottom: var(--s12);
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap: var(--s8);
+      padding: var(--s4) var(--s8);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .badge.muted{ color: var(--textMuted); }
+    .badgeAccent{
+      border-color: var(--accentBorder);
+      background: var(--accentBg);
+      color: var(--accent);
+    }
+
+    .rows{
+      display:flex;
+      flex-direction:column;
+      gap: 0;
+    }
+    .row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: var(--s12) 0;
+      border-bottom: 0.5px solid var(--borderSubtle);
+      font-size: 12px;
+      color: var(--textMuted);
+    }
+    .row:last-child{ border-bottom: none; }
+    .row .val{ 
+      color: var(--text); 
+      font-weight: 600; 
+      letter-spacing: -0.01em;
+      font-size: 13px;
+    }
+
+    .gaugeWrap{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: var(--s16) 0;
+    }
+    .gauge{
+      --deg: 0deg;
+      width: 120px;
+      height: 120px;
+      border-radius: 999px;
+      background:
+        conic-gradient(var(--accent) 0deg, var(--accent) var(--deg), rgba(0,0,0,0.06) var(--deg), rgba(0,0,0,0.06) 360deg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .gaugeInner{
+      width: 90px;
+      height: 90px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--borderSubtle);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap: 2px;
+    }
+    .gaugeNum{
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .gaugeLbl{
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .level{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 6px 10px;
+      border-radius: var(--r8);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border: 1px solid;
+      width: fit-content;
+      margin: 0 auto;
+    }
+    .level.empty { background: rgba(22,163,74,0.08); color: var(--success); border-color: rgba(22,163,74,0.22); }
+    .level.light { background: rgba(22,163,74,0.06); color: #15803d; border-color: rgba(22,163,74,0.18); }
+    .level.normal { background: rgba(234,88,12,0.06); color: #a16207; border-color: rgba(234,88,12,0.18); }
+    .level.busy { background: rgba(234,88,12,0.08); color: var(--warning); border-color: rgba(234,88,12,0.22); }
+    .level.full { background: rgba(220,38,38,0.08); color: var(--danger); border-color: rgba(220,38,38,0.22); }
+
+    /* Data grids (modules 1/2/3) */
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--s12);
+    }
+    @media (max-width: 1200px){
+      .grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+    .metric{
+      padding: var(--s16);
+      border-radius: var(--r8);
+      border: 0.5px solid var(--borderSubtle);
+      background: var(--card);
+      min-width: 0;
+    }
+    .metricLabel{
+      font-size: 11px;
+      color: var(--textMuted);
+      font-weight: 500;
+      margin-bottom: var(--s8);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .metricValue{
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .emptyState{
+      padding: var(--s24);
+      border: 0.5px dashed var(--borderSubtle);
+      border-radius: var(--r8);
+      color: var(--textFaint);
+      font-size: 12px;
+      text-align:center;
+      background: var(--surface);
+    }
+
+    /* Controls */
+    .btnRow{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--s12); }
+    .btn{
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      transition: border-color 150ms cubic-bezier(0.25,1,0.5,1), background-color 150ms cubic-bezier(0.25,1,0.5,1);
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover{
+      border-color: var(--border);
+      background: var(--surface);
+    }
+    .btn:active{ background: var(--card); }
+    .btn.primary{ 
+      border-color: var(--accentBorder); 
+      background: var(--accentBg); 
+      color: var(--accent); 
+    }
+    .btn.primary:hover{
+      background: rgba(37,99,235,0.12);
+    }
+    .btn.danger{ 
+      border-color: rgba(220,38,38,0.3); 
+      background: rgba(220,38,38,0.08); 
+      color: var(--danger); 
+    }
+
+    .inline{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: var(--s12);
+    }
+    .switchRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: var(--s12);
+      padding: var(--s12);
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      background: var(--card);
+    }
+    .switchMeta{
+      display:flex;
+      flex-direction:column;
+      gap: var(--s4);
+    }
+    .switchMeta .l{ font-size: 12px; font-weight: 600; letter-spacing:-0.01em; color: var(--text); }
+    .switchMeta .d{ font-size: 11px; color: var(--textMuted); }
+
+    .toggle{
+      width: 40px;
+      height: 22px;
+      border-radius: 999px;
+      background: var(--surface);
+      position: relative;
+      border: 0.5px solid var(--borderSubtle);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .toggle::after{
+      content:"";
+      position:absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 0.5px solid var(--borderSubtle);
+      transition: transform 150ms cubic-bezier(0.25,1,0.5,1);
+    }
+    .toggle.on{
+      background: var(--text);
+      border-color: var(--text);
+    }
+    .toggle.on::after{ 
+      transform: translateX(18px);
+      background: var(--card);
+    }
+
+    /* Custom select (no native select styling issues) */
+    .select{
+      position: relative;
+      width: 100%;
+    }
+    .selectBtn{
+      width: 100%;
+      display:inline-flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: var(--s12);
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .chev{
+      width: 12px;
+      height: 12px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      margin-top: -2px;
+      flex: 0 0 auto;
+    }
+    .menu{
+      position:absolute;
+      top: calc(100% + var(--s8));
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r8);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      padding: var(--s4);
+      display:none;
+      z-index: 50;
+      max-height: 240px;
+      overflow:auto;
+    }
+    .menu.open{ display:block; }
+    .opt{
+      padding: var(--s8) var(--s8);
+      border-radius: var(--r6);
+      cursor:pointer;
+      font-size: 12px;
+      color: var(--text);
+      display:flex;
+      justify-content:space-between;
+      gap: var(--s12);
+    }
+    .opt:hover{ background: var(--surface); }
+    .opt .hint{ color: var(--textMuted); font-weight: 500; font-size: 11px; }
+    .opt.active{ background: var(--accentBg); color: var(--accent); }
+
+    /* Log */
+    .log{
+      display:flex;
+      flex-direction:column;
+      gap: var(--s8);
+      max-height: 360px;
+      overflow:auto;
+    }
+    .logItem{
+      padding: var(--s8) var(--s12);
+      border-radius: var(--r6);
+      border: 0.5px solid var(--borderSubtle);
+      background: var(--card);
+      font-size: 11px;
+      color: var(--textMuted);
+    }
+    .logTime{ color: var(--textFaint); margin-right: var(--s8); font-variant-numeric: tabular-nums; }
+
+    /* Charts (fix infinite growth by hard-sizing containers) */
+    .chartsGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--s16);
+    }
+    @media (max-width: 900px){ .chartsGrid{ grid-template-columns: 1fr; } }
+    .chartBox{
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      padding: var(--s16);
+      background: var(--card);
+      height: 320px; /* hard stop to prevent Chart.js resize feedback loops */
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+    }
+    .chartTitle{
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: var(--s12);
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .chartStage{
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    canvas.chartCanvas{
+      width: 100% !important;
+      height: 100% !important;
+      display:block;
+    }
+
+    /* Tiny motion */
+    @keyframes flash { 0%,100%{ background: transparent; } 50%{ background: rgba(37,99,235,0.06);} }
+    .flash{ animation: flash 240ms ease; }
+    @keyframes pulse { 0%,100%{ opacity: 1; } 50%{ opacity: 0.5; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <div class="card header">
+      <div class="headerRow">
+        <div class="brand">
+          <h1>Smart Sports Dashboard</h1>
+          <div class="metaRow">
+            <span class="pill"><span class="dot" id="dot-server"></span><span id="server-status-text">Connecting</span></span>
+            <span class="pill"><span>Last update</span><span class="mono" id="last-update">—</span></span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: var(--s12);">
+          <span class="pill mono" id="server-origin">—</span>
+          <a href="/logout" class="btn" style="text-decoration: none;">Logout</a>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpiLabel">Module 1</div>
+          <div class="kpiValue mono" id="kpi-m1">0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Module 2</div>
+          <div class="kpiValue mono" id="kpi-m2">0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Module 3</div>
+          <div class="kpiValue mono" id="kpi-m3">0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Module 5</div>
+          <div class="kpiValue mono" id="kpi-m5">Waiting</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Messages</div>
+          <div class="kpiValue mono" id="kpi-msg">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Left: Module 5 preview -->
+    <div class="card left">
+      <div class="sectionTitleRow">
+        <div>
+          <p class="title">Module 5 Preview</p>
+          <p class="subtitle">Mirrors the payload sent to the display client</p>
+        </div>
+        <span class="badge badgeAccent" id="m5-view">Status</span>
+      </div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="gaugeWrap">
+          <div class="gauge" id="occ-gauge" style="--deg:0deg;">
+            <div class="gaugeInner">
+              <div class="gaugeNum mono" id="occ-pct">0%</div>
+              <div class="gaugeLbl">Occupancy</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:center; margin-bottom: var(--s16);">
+          <span class="level normal" id="m5-level">NORMAL</span>
+        </div>
+      </div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="cardHeader" style="margin-bottom: var(--s12); padding-bottom: var(--s12);">
+          <p class="title">Current</p>
+          <span class="badge muted mono" id="m5-court">basketball_a</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>People</span><span class="val mono" id="m5-people">—</span></div>
+          <div class="row"><span>Estimated wait</span><span class="val mono" id="m5-wait">—</span></div>
+          <div class="row"><span>Confidence</span><span class="val mono" id="m5-confidence">—</span></div>
+          <div class="row"><span>Last update</span><span class="val mono" id="m5-last-update">—</span></div>
+        </div>
+      </div>
+
+      <div style="height: var(--s16);"></div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="cardHeader" style="margin-bottom: var(--s12); padding-bottom: var(--s12);">
+          <p class="title">Weather</p>
+          <span class="badge muted">Live</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>Temp</span><span class="val mono" id="m5-temp">—</span></div>
+          <div class="row"><span>Humidity</span><span class="val mono" id="m5-humidity">—</span></div>
+          <div class="row"><span>UV</span><span class="val mono" id="m5-uv">—</span></div>
+          <div class="row"><span>Comfort</span><span class="val mono" id="m5-comfort">—</span></div>
+          <div class="row"><span>Air quality</span><span class="val" id="m5-voc">—</span></div>
+        </div>
+        <div id="m5-warnings" style="margin-top: var(--s12); display: none;"></div>
+      </div>
+
+      <div style="height: var(--s16);"></div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="cardHeader" style="margin-bottom: var(--s12); padding-bottom: var(--s12);">
+          <p class="title">Court</p>
+          <span class="badge muted">Info</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>Name</span><span class="val" id="m5-court-name">—</span></div>
+          <div class="row"><span>Rating</span><span class="val mono" id="m5-rating">—</span></div>
+          <div class="row"><span>Capacity</span><span class="val mono" id="m5-capacity">—</span></div>
+          <div class="row"><span>Last cleaned</span><span class="val mono" id="m5-cleaned">—</span></div>
+          <div class="row"><span>Size</span><span class="val" id="m5-size">—</span></div>
+        </div>
+      </div>
+
+      <div style="height: var(--s16);"></div>
+
+      <div class="card flat" style="padding:0; border:none; box-shadow:none;">
+        <div class="cardHeader" style="margin-bottom: var(--s12); padding-bottom: var(--s12);">
+          <p class="title">Recommendations</p>
+          <span class="badge muted">Suggestions</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>Next available</span><span class="val mono" id="m5-next-slot">—</span></div>
+          <div class="row"><span>Alternatives</span><span class="val mono" id="m5-alternatives">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main: Modules 1/2/3 -->
+    <div class="stack main">
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Crowd Detection (Module 1)</p>
+            <p class="subtitle">People + sensors</p>
+          </div>
+          <span class="badge muted" id="m1-status">Offline</span>
+        </div>
+        
+        <!-- AI Image Analysis Section -->
+        <div style="margin-bottom: var(--s16); padding: var(--s16); background: #fff; border-radius: var(--r12); border: 1px solid var(--borderSubtle);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
+            <div style="font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.01em;">AI Image Analysis</div>
+          </div>
+          <div style="display: flex; gap: var(--s8); align-items: center; flex-wrap: wrap;">
+            <input type="file" id="ai-image-input" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+            <button class="btn primary" onclick="document.getElementById('ai-image-input').click()">
+              Upload Image
+            </button>
+            <button class="btn" id="ai-analyze-btn" onclick="analyzeImage()" disabled style="opacity: 0.5; cursor: not-allowed;">
+              Analyze
+            </button>
+            <span id="ai-image-name" style="font-size: 13px; color: var(--muted); margin-left: var(--s4);"></span>
+          </div>
+          <div id="ai-image-preview" style="margin-top: var(--s12); display: none;">
+            <img id="ai-preview-img" src="" alt="Preview" style="max-width: 100%; max-height: 300px; border-radius: var(--r8); border: 1px solid var(--borderSubtle); object-fit: contain;">
+          </div>
+          <div id="ai-analysis-result" style="margin-top: var(--s16); display: none; padding: var(--s12); background: #fff; border-radius: var(--r8); border: 1px solid var(--borderSubtle);">
+            <!-- Results will be displayed here -->
+          </div>
+        </div>
+        
+        <div id="m1-image-container" style="margin-bottom: 15px; display: none;">
+          <img id="m1-image" src="" alt="Video Feed" style="width: 100%; max-width: 640px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+        </div>
+        <div id="m1-grid" class="grid">
+          <div class="emptyState">Waiting for crowd data…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Environment (Module 2)</p>
+            <p class="subtitle">Conditions</p>
+          </div>
+          <span class="badge muted" id="m2-status">Offline</span>
+        </div>
+        <div id="m2-grid" class="grid">
+          <div class="emptyState">Waiting for environment data…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Feedback (Module 3)</p>
+            <p class="subtitle">Latest entry</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="m3-kiosk-status" style="font-size: 0.75em; padding: 4px 8px; border-radius: 4px; background: #e5e7eb; color: #6b7280;">
+              <span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; margin-right: 5px;"></span>
+              Idle
+            </span>
+            <span class="badge muted" id="m3-status">Offline</span>
+          </div>
+        </div>
+        <div id="m3-stats" style="margin-bottom: 15px; display: none;">
+          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
+                <div id="m3-average" style="font-size: 1.8em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Latest Rating</div>
+                <div id="m3-latest-rating" style="font-size: 1.8em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Total Ratings</div>
+                <div id="m3-total" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Last Interaction</div>
+                <div id="m3-last-interaction" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
+              </div>
+            </div>
+            <div id="m3-chart" style="margin-top: 15px;">
+              <!-- Rating distribution chart will be rendered here -->
+            </div>
+          </div>
+        </div>
+        <div id="m3-grid" class="grid">
+          <div class="emptyState">Waiting for feedback…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Debug + Log -->
+    <div class="stack right">
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Debug</p>
+            <p class="subtitle">Connection + payload inspector</p>
+          </div>
+          <span class="badge muted" id="dbg-conn">—</span>
+        </div>
+
+        <div class="inline" style="margin-bottom: var(--s12);">
+          <span class="subtitle">Server</span>
+          <span class="pill"><span class="dot" id="dot-dbg"></span><span class="mono" id="dbg-socket">—</span></span>
+        </div>
+        <div class="inline" style="margin-bottom: var(--s12);">
+          <span class="subtitle">Module 5</span>
+          <span class="pill"><span class="dot" id="dot-m5"></span><span class="mono" id="dbg-m5">—</span></span>
+        </div>
+
+        <a href="/debug" class="btn" style="width: 100%; text-align: center; text-decoration: none; display: block; margin-top: var(--s12);">
+          Open Debug Page
+        </a>
+      </div>
+
+      <div class="card">
+        <div class="cardHeader">
+          <div>
+            <p class="title">Activity</p>
+            <p class="subtitle">Last 50 events</p>
+          </div>
+          <span class="badge muted mono" id="log-count">0</span>
+        </div>
+        <div class="log" id="log"></div>
+        <a href="/debug" class="btn" style="width: 100%; text-align: center; text-decoration: none; display: block; margin-top: var(--s12);">
+          Open Activity Log
+        </a>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="card charts">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Historical Patterns</p>
+          <p class="subtitle">From the Module 5 payload</p>
+        </div>
+        <span class="badge muted">Chart.js</span>
+      </div>
+      <div class="chartsGrid">
+        <div class="chartBox">
+          <div class="chartTitle">Today (hourly)</div>
+          <div class="chartStage">
+            <canvas id="chart-hourly" class="chartCanvas"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Week (same time)</div>
+          <div class="chartStage">
+            <canvas id="chart-weekly" class="chartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ratings Pie Chart -->
+    <div class="card charts">
+      <div class="cardHeader">
+        <div>
+          <p class="title">Feedback Ratings Distribution</p>
+          <p class="subtitle">User rating breakdown</p>
+        </div>
+        <span class="badge muted">Chart.js</span>
+      </div>
+      <div class="chartsGrid" style="grid-template-columns: 1fr; max-width: 500px; margin: 0 auto;">
+        <div class="chartBox">
+          <div class="chartTitle">Rating Distribution</div>
+          <div class="chartStage">
+            <canvas id="chart-ratings" class="chartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Check authentication
+    if (sessionStorage.getItem('role') !== 'personnel') {
+      window.location.href = '/login';
+    }
+    
+    // Keep the SAME event logic, but make connection robust:
+    // - Use same-origin Socket.IO (avoids hardcoded IP mismatch)
+    // - Handle current_data_snapshot to render immediately
+    const socket = io(); // same origin
+    const courtId = "basketball_a";
+
+    const state = {
+      connectedModules: { crowd_detection: [], environment: [], feedback: [] },
+      latestModule5: null,
+      latestCrowdData: null,  // Store latest crowd data to merge fields
+      msgCount: 0,
+      mockActive: false,
+      mockScenario: "normal",
+      mockInterval: 30,
+      pollInterval: null,
+      lastDataHash: null,
+      charts: { hourly: null, weekly: null, ratings: null },
+      ratingDistribution: null,  // Store latest rating distribution data
+      module3: {
+        lastRatingTimestamp: null,  // ISO timestamp string
+        latestRating: null
+      },
+      health: {
+        m1: { lastSeen: 0, source: null, mode: "idle" }, // idle|active|mock
+        m2: { lastSeen: 0, source: null, mode: "idle" },
+        m3: { lastSeen: 0, source: null, mode: "idle" },
+        m5: { lastSeen: 0, source: null, mode: "idle" }  // idle|active (cannot infer physical connection)
+      }
+    };
+
+    function nowTime(){
+      return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+
+    function log(message){
+      const el = document.getElementById("log");
+      if(!el) {
+        console.warn("Log element not found, message:", message);
+        return;
+      }
+      const item = document.createElement("div");
+      item.className = "logItem";
+      item.innerHTML = `<span class="logTime">[${nowTime()}]</span>${escapeHtml(message)}`;
+      el.prepend(item);
+      while(el.children.length > 50) el.removeChild(el.lastChild);
+      const logCountEl = document.getElementById("log-count");
+      if(logCountEl) {
+        logCountEl.textContent = String(Math.min(el.children.length, 50));
+      }
+    }
+
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function setDot(id, status){
+      const dot = document.getElementById(id);
+      dot.classList.remove("online","offline");
+      if(status === "online") dot.classList.add("online");
+      if(status === "offline") dot.classList.add("offline");
+    }
+
+    function setBadge(id, text, variant){
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.classList.remove("badgeAccent");
+      if(variant === "accent") el.classList.add("badgeAccent");
+    }
+
+    function setToggle(id, on){
+      const el = document.getElementById(id);
+      el.classList.toggle("on", !!on);
+      el.setAttribute("aria-checked", on ? "true" : "false");
+    }
+
+    function bumpMsg(){
+      state.msgCount += 1;
+      document.getElementById("kpi-msg").textContent = String(state.msgCount);
+      document.getElementById("last-update").textContent = nowTime();
+    }
+
+    function updateKpis(){
+      document.getElementById("kpi-m1").textContent = String(state.connectedModules.crowd_detection.length || 0);
+      document.getElementById("kpi-m2").textContent = String(state.connectedModules.environment.length || 0);
+      document.getElementById("kpi-m3").textContent = String(state.connectedModules.feedback.length || 0);
+    }
+
+    function updateGauge(occupancy){
+      const pct = Math.max(0, Math.min(1, Number(occupancy || 0)));
+      const deg = Math.round(pct * 360);
+      document.getElementById("occ-gauge").style.setProperty("--deg", `${deg}deg`);
+      document.getElementById("occ-pct").textContent = `${Math.round(pct * 100)}%`;
+    }
+
+    function setLevel(level){
+      const el = document.getElementById("m5-level");
+      const normalized = String(level || "normal").toLowerCase();
+      el.classList.remove("empty","light","normal","busy","full");
+      el.classList.add(["empty","light","normal","busy","full"].includes(normalized) ? normalized : "normal");
+      el.textContent = normalized.toUpperCase();
+    }
+
+    function updateModule5Preview(data){
+      try {
+        if(!data) {
+          console.warn("updateModule5Preview called with no data");
+          return;
+        }
+        // Check if this is a disconnect signal
+        if(data.disconnected) {
+          console.log("Module 5 disconnect signal received");
+          // Clear Module 5 preview
+          document.getElementById("kpi-m5").textContent = "Waiting";
+          setDot("dot-m5", "offline");
+          document.getElementById("dbg-m5").textContent = "—";
+          
+          // Clear all Module 5 fields
+          const clearField = (id, value = "—") => {
+            const el = document.getElementById(id);
+            if(el) el.textContent = value;
+          };
+          
+          clearField("m5-court", "—");
+          clearField("m5-people", "—");
+          clearField("m5-wait", "—");
+          clearField("m5-confidence", "—");
+          clearField("m5-last-update", "—");
+          clearField("m5-temp", "—");
+          clearField("m5-humidity", "—");
+          clearField("m5-uv", "—");
+          clearField("m5-comfort", "—");
+          clearField("m5-voc", "—");
+          clearField("m5-court-name", "—");
+          clearField("m5-rating", "—");
+          clearField("m5-capacity", "—");
+          clearField("m5-next-slot", "—");
+          clearField("m5-alternatives", "—");
+          
+          // Clear gauge
+          updateGauge(0);
+          setLevel("empty");
+          
+          // Clear warnings
+          const warningsEl = document.getElementById("m5-warnings");
+          if(warningsEl) warningsEl.style.display = "none";
+          
+          state.health.m5.mode = "idle";
+          state.health.m5.lastSeen = 0;
+          state.latestModule5 = null;
+          return;
+        }
+        
+        // Check if incoming data is empty/default (all zeros) and we already have valid data
+        const current = data.current || {};
+        const incomingPeopleCount = current.people_count || 0;
+        const incomingOccupancy = current.occupancy || 0;
+        const hasExistingData = state.latestModule5 && state.latestModule5.current;
+        const existingPeopleCount = hasExistingData ? (state.latestModule5.current.people_count || 0) : 0;
+        
+        // If incoming data is all zeros/empty and we have existing valid data, preserve existing data
+        if(incomingPeopleCount === 0 && incomingOccupancy === 0 && existingPeopleCount > 0 && !data.disconnected) {
+          console.log("Ignoring empty Module 5 update (preserving existing data with", existingPeopleCount, "people)");
+          return; // Don't update with empty data
+        }
+        
+        console.log("Updating Module 5 preview with data:", data);
+        state.latestModule5 = data;
+        bumpMsg();
+
+        // NOTE: Dashboard receiving DisplayUpdate does NOT mean a physical Module 5 client is connected.
+        // Treat this as "Active (broadcast/data)" only.
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.source = "DisplayUpdate";
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = "data";
+
+        document.getElementById("m5-court").textContent = data.court_id || courtId;
+
+        // current was already declared above, just use it
+        const weather = data.weather || {};
+        const info = data.info || {};
+        const recommendations = data.recommendations || {};
+
+        if(current.occupancy != null) updateGauge(current.occupancy);
+        if(current.crowd_level) setLevel(current.crowd_level);
+
+      // Current section
+      document.getElementById("m5-people").textContent = String(current.people_count ?? "—");
+      document.getElementById("m5-wait").textContent = current.estimated_wait_min != null ? `${current.estimated_wait_min} min` : "—";
+      document.getElementById("m5-confidence").textContent = current.confidence != null ? `${Math.round(Number(current.confidence) * 100)}%` : "—";
+      document.getElementById("m5-last-update").textContent = current.last_update || "—";
+
+      // Weather section
+      document.getElementById("m5-temp").textContent = weather.temp_c != null ? `${weather.temp_c}°C` : "—";
+      document.getElementById("m5-humidity").textContent = weather.humidity_percent != null ? `${weather.humidity_percent}%` : "—";
+      document.getElementById("m5-uv").textContent = weather.uv_index != null ? String(weather.uv_index) : "—";
+      document.getElementById("m5-comfort").textContent = weather.comfort_score != null ? `${weather.comfort_score}/5` : "—";
+      
+      // VOC level with badge styling
+      const vocEl = document.getElementById("m5-voc");
+      const vocLevel = weather.voc_level || "";
+      if(vocLevel){
+        vocEl.textContent = vocLevel.charAt(0).toUpperCase() + vocLevel.slice(1);
+        vocEl.className = "val";
+        if(vocLevel === "good") vocEl.classList.add("badge", "badgeSuccess");
+        else if(vocLevel === "moderate") vocEl.classList.add("badge", "badgeWarning");
+        else if(vocLevel === "poor") vocEl.classList.add("badge", "badgeDanger");
+      } else {
+        vocEl.textContent = "—";
+        vocEl.className = "val mono";
+      }
+
+      // Warnings display
+      const warningsEl = document.getElementById("m5-warnings");
+      if(weather.warnings && Array.isArray(weather.warnings) && weather.warnings.length > 0){
+        warningsEl.style.display = "block";
+        warningsEl.innerHTML = weather.warnings.map(w => `<span class="badge badgeWarning" style="margin-right: var(--s8); margin-bottom: var(--s8);">${w}</span>`).join("");
+      } else {
+        warningsEl.style.display = "none";
+      }
+
+      // Court info section
+      document.getElementById("m5-court-name").textContent = info.court_name || data.court_id || "—";
+      document.getElementById("m5-rating").textContent = info.rating_avg != null ? `${Number(info.rating_avg).toFixed(1)}/5` : "—";
+      document.getElementById("m5-capacity").textContent = info.capacity != null ? `${info.capacity} people` : "—";
+      document.getElementById("m5-cleaned").textContent = info.last_cleaned || "—";
+      document.getElementById("m5-size").textContent = info.size || "—";
+
+      // Recommendations section
+      document.getElementById("m5-next-slot").textContent = recommendations.next_available_slot || "—";
+      const alternatives = recommendations.nearby_alternatives || [];
+      if(alternatives.length > 0){
+        document.getElementById("m5-alternatives").textContent = `${alternatives.length} available`;
+      } else {
+        document.getElementById("m5-alternatives").textContent = "None";
+      }
+
+      // Inspector moved to /debug page
+
+      // charts
+      if(data.patterns) updateChartsFromModule5(data);
+      } catch(error) {
+        console.error("Error updating Module 5 preview:", error, data);
+        log(`Error updating Module 5 preview: ${error.message}`);
+      }
+    }
+
+    function metricTile(label, value, mono){
+      const v = value == null ? "—" : String(value);
+      return `
+        <div class="metric">
+          <div class="metricLabel">${escapeHtml(label)}</div>
+          <div class="metricValue ${mono ? "mono" : ""}">${escapeHtml(v)}</div>
+        </div>
+      `;
+    }
+
+    function setModuleStatus(id, mode, source){
+      // mode: "idle" | "active" | "mock"
+      const el = document.getElementById(id);
+      el.classList.add("badge");
+      const src = source ? ` · ${source}` : "";
+
+      if(mode === "mock"){
+        el.textContent = `Mock${src}`;
+        el.style.borderColor = "rgba(234,88,12,0.22)";
+        el.style.background = "rgba(234,88,12,0.08)";
+        el.style.color = "var(--warning)";
+        return;
+      }
+
+      if(mode === "active"){
+        el.textContent = `Active${src}`;
+        el.style.borderColor = "rgba(37,99,235,0.22)";
+        el.style.background = "rgba(37,99,235,0.08)";
+        el.style.color = "var(--accent)";
+        return;
+      }
+
+      // idle
+      el.textContent = "Idle";
+      el.style.borderColor = "var(--border)";
+      el.style.background = "#fff";
+      el.style.color = "var(--muted)";
+    }
+
+    function renderCrowd(data){
+      if(!data) {
+        console.warn("renderCrowd called with no data");
+        return;
+      }
+      bumpMsg();
+      const d = (data && data.data) ? data.data : {};
+      const src = data && data.module_id ? data.module_id : null;
+      state.health.m1.lastSeen = Date.now();
+      state.health.m1.source = src;
+      state.health.m1.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
+      setModuleStatus("m1-status", state.health.m1.mode, state.health.m1.mode === "mock" ? "simulated" : "data");
+      
+      // Merge with existing crowd data to preserve all fields
+      // This ensures level, confidence, and noise/volume are shown together
+      // Only update fields that are actually present in incoming data
+      let existingData = {};
+      if(state.latestCrowdData && state.latestCrowdData.data) {
+        existingData = { ...state.latestCrowdData.data };
+      }
+      
+      // Smart merge: only update fields that are explicitly present in incoming data
+      // If a field is not in incoming data, keep the existing value
+      // Start with existing data (preserves all previous fields)
+      const mergedData = { ...existingData };
+      
+      // Only update fields that are actually present in the incoming data object
+      // This ensures partial updates don't clear existing fields
+      // Example: If incoming data has only noise_db and motion_detected, 
+      //          we only update those two fields and keep people_count, crowd_level, confidence
+      if(d && typeof d === 'object' && Object.keys(d).length > 0) {
+        // List of fields we care about for Module 1
+        const fieldsToMerge = ['people_count', 'crowd_level', 'confidence', 'noise_db', 'motion_detected', 'proximity_triggered'];
+        
+        fieldsToMerge.forEach(key => {
+          // Only update if this field exists in incoming data AND has a value
+          if(key in d && d[key] !== null && d[key] !== undefined) {
+            mergedData[key] = d[key];
+          }
+          // If field not in incoming data, keep existing value (already in mergedData from existingData)
+        });
+      }
+      
+      // Store merged data for next update
+      state.latestCrowdData = {
+        ...data,
+        data: mergedData
+      };
+      
+      const html = [
+        metricTile("People", mergedData.people_count ?? 0, true),
+        metricTile("Level", (mergedData.crowd_level || "—").toUpperCase(), false),
+        metricTile("Confidence", mergedData.confidence != null ? `${Math.round(Number(mergedData.confidence) * 100)}%` : "—", true),
+        metricTile("Noise", mergedData.noise_db != null ? `${mergedData.noise_db} dB` : "—", true),
+        metricTile("Motion", mergedData.motion_detected ? "Yes" : "No", false)
+      ].join("");
+      const grid = document.getElementById("m1-grid");
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m1-grid element not found");
+      }
+    }
+
+    function renderEnvironment(data){
+      if(!data) {
+        console.warn("renderEnvironment called with no data");
+        return;
+      }
+      bumpMsg();
+      const d = (data && data.data) ? data.data : {};
+      const src = data && data.module_id ? data.module_id : null;
+      state.health.m2.lastSeen = Date.now();
+      state.health.m2.source = src;
+      state.health.m2.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
+      setModuleStatus("m2-status", state.health.m2.mode, state.health.m2.mode === "mock" ? "simulated" : "data");
+      const html = [
+        metricTile("Temperature", d.temperature_c != null ? `${d.temperature_c}°C` : "—", true),
+        metricTile("Humidity", d.humidity_percent != null ? `${d.humidity_percent}%` : "—", true),
+        metricTile("UV Index", d.uv_index != null ? d.uv_index : "—", true),
+        metricTile("Comfort", d.comfort_score != null ? `${Number(d.comfort_score).toFixed(1)}/5` : "—", true),
+        metricTile("VOC", (d.voc_level || "—").toUpperCase(), false)
+      ].join("");
+      const grid = document.getElementById("m2-grid");
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m2-grid element not found");
+      }
+    }
+
+    function renderFeedback(data){
+      if(!data) {
+        console.warn("renderFeedback called with no data");
+        return;
+      }
+      bumpMsg();
+      const d = (data && data.data) ? data.data : {};
+      const src = data && data.module_id ? data.module_id : null;
+      state.health.m3.lastSeen = Date.now();
+      state.health.m3.source = src;
+      state.health.m3.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
+      setModuleStatus("m3-status", state.health.m3.mode, state.health.m3.mode === "mock" ? "simulated" : "data");
+      
+      // Display statistics (average and graph) if available
+      if(data.statistics) {
+        const stats = data.statistics;
+        const statsContainer = document.getElementById("m3-stats");
+        const avgElement = document.getElementById("m3-average");
+        const totalElement = document.getElementById("m3-total");
+        const latestRatingElement = document.getElementById("m3-latest-rating");
+        const lastInteractionElement = document.getElementById("m3-last-interaction");
+        const chartElement = document.getElementById("m3-chart");
+        
+        if(statsContainer && avgElement && totalElement) {
+          statsContainer.style.display = "block";
+          
+          // Update average rating
+          if(stats.average_rating !== null && stats.average_rating !== undefined) {
+            avgElement.textContent = stats.average_rating.toFixed(2);
+            avgElement.style.color = stats.average_rating >= 4 ? "#10b981" : stats.average_rating >= 3 ? "#f59e0b" : "#ef4444";
+          } else {
+            avgElement.textContent = "—";
+          }
+          
+          // Update latest rating
+          if(latestRatingElement) {
+            if(stats.latest_rating !== null && stats.latest_rating !== undefined) {
+              const stars = "★".repeat(Math.max(0, Number(stats.latest_rating)));
+              latestRatingElement.innerHTML = `${stars} <span style="font-size: 0.6em; color: var(--muted);">(${stats.latest_rating}/5)</span>`;
+              latestRatingElement.style.color = stats.latest_rating >= 4 ? "#10b981" : stats.latest_rating >= 3 ? "#f59e0b" : "#ef4444";
+            } else {
+              latestRatingElement.textContent = "—";
+              latestRatingElement.style.color = "var(--text)";
+            }
+          }
+          
+          // Update time since last rating interaction
+          if(lastInteractionElement) {
+            if(stats.time_since_last_rating) {
+              lastInteractionElement.textContent = stats.time_since_last_rating;
+              lastInteractionElement.style.color = "var(--text)";
+              // Store timestamp for periodic updates
+              if(stats.last_rating_timestamp) {
+                state.module3.lastRatingTimestamp = stats.last_rating_timestamp;
+              }
+            } else {
+              lastInteractionElement.textContent = "Never";
+              lastInteractionElement.style.color = "var(--textMuted)";
+              state.module3.lastRatingTimestamp = null;
+            }
+          }
+          
+          // Store latest rating in state
+          if(stats.latest_rating !== null && stats.latest_rating !== undefined) {
+            state.module3.latestRating = stats.latest_rating;
+          }
+          
+          // Update total ratings
+          totalElement.textContent = stats.total_ratings || 0;
+          
+          // Render rating distribution chart (bar chart in module stats)
+          if(chartElement && stats.rating_distribution) {
+            renderRatingChart(chartElement, stats.rating_distribution, stats.total_ratings);
+          }
+
+          // Update pie chart with rating distribution
+          if(stats.rating_distribution && state.charts.ratings) {
+            updateRatingsPieChart(stats.rating_distribution);
+          }
+        }
+      }
+      
+      // Display individual feedback entry
+      let html = "";
+      if(d.report_type === "rating"){
+        const stars = "★".repeat(Math.max(0, Number(d.rating || 0)));
+        html = [
+          metricTile("Question", d.question_text || "Rating", false),
+          metricTile("Rating", `${stars} (${d.rating || 0}/${d.rating_scale || 5})`, false)
+        ].join("");
+      } else if(d.report_type === "text"){
+        html = [
+          metricTile("Question", d.question_text || "Feedback", false),
+          metricTile("Response", d.text_response || "—", false),
+          metricTile("Category", d.issue_category || "—", false)
+        ].join("");
+      } else {
+        html = metricTile("Feedback", "—", false);
+      }
+      const grid = document.getElementById("m3-grid");
+      if(grid) {
+        grid.innerHTML = html;
+        grid.classList.add("flash");
+        setTimeout(()=>grid.classList.remove("flash"), 260);
+      } else {
+        console.error("m3-grid element not found");
+      }
+    }
+    
+    function renderRatingChart(container, distribution, totalRatings) {
+      if(!distribution || totalRatings === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">No ratings yet</div>';
+        return;
+      }
+      
+      // Get max count for scaling
+      const maxCount = Math.max(...Object.values(distribution));
+      
+      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px;">Rating Distribution</div>';
+      
+      // Create bars for ratings 1-6
+      for(let rating = 1; rating <= 6; rating++) {
+        const count = distribution[rating] || 0;
+        const percentage = totalRatings > 0 ? (count / totalRatings * 100) : 0;
+        const barWidth = maxCount > 0 ? (count / maxCount * 100) : 0;
+        
+        chartHTML += `
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div style="width: 30px; font-weight: 600; color: var(--text);">${rating}</div>
+            <div style="flex: 1; margin: 0 10px;">
+              <div style="background: var(--borderSubtle); height: 20px; border-radius: 4px; overflow: hidden;">
+                <div style="background: ${rating >= 4 ? '#10b981' : rating >= 3 ? '#f59e0b' : '#ef4444'}; height: 100%; width: ${barWidth}%; transition: width 0.3s;"></div>
+              </div>
+            </div>
+            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text);">
+              ${count} (${percentage.toFixed(0)}%)
+            </div>
+          </div>
+        `;
+      }
+      
+      container.innerHTML = chartHTML;
+    }
+
+    // Chart.js: create once, update data only. Fixed-size parent prevents infinite resize loops.
+    function initCharts(){
+      const hourly = document.getElementById("chart-hourly");
+      const weekly = document.getElementById("chart-weekly");
+      const ratings = document.getElementById("chart-ratings");
+
+      const common = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { callback: (v)=> `${v}%` } }
+        }
+      };
+
+      state.charts.hourly = new Chart(hourly, {
+        type: "line",
+        data: { labels: [], datasets: [{ data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), backgroundColor: "rgba(37,99,235,0.12)", fill: true, tension: 0.35 }] },
+        options: common
+      });
+
+      state.charts.weekly = new Chart(weekly, {
+        type: "bar",
+        data: { labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], datasets: [{ data: [], backgroundColor: "rgba(37,99,235,0.75)" }] },
+        options: common
+      });
+
+      // Ratings pie chart
+      const ratingColors = {
+        1: '#ef4444',  // Red
+        2: '#f97316',  // Orange
+        3: '#f59e0b',  // Amber
+        4: '#10b981',  // Green
+        5: '#16a34a',  // Dark green
+        6: '#059669'   // Emerald
+      };
+
+      state.charts.ratings = new Chart(ratings, {
+        type: "pie",
+        data: {
+          labels: [],
+          datasets: [{
+            data: [],
+            backgroundColor: [],
+            borderColor: '#ffffff',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'right',
+              labels: {
+                padding: 15,
+                font: {
+                  size: 12,
+                  weight: '600'
+                },
+                generateLabels: function(chart) {
+                  const data = chart.data;
+                  if (data.labels.length && data.datasets.length) {
+                    return data.labels.map((label, i) => {
+                      const value = data.datasets[0].data[i];
+                      const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
+                      const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                      return {
+                        text: `${label} Star${label !== '1' ? 's' : ''} (${percentage}%)`,
+                        fillStyle: data.datasets[0].backgroundColor[i],
+                        strokeStyle: data.datasets[0].borderColor,
+                        lineWidth: data.datasets[0].borderWidth,
+                        hidden: false,
+                        index: i
+                      };
+                    });
+                  }
+                  return [];
+                }
+              }
+            },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function updateChartsFromModule5(data){
+      const patterns = data && data.patterns ? data.patterns : null;
+      if(!patterns || !state.charts.hourly || !state.charts.weekly) return;
+
+      if(Array.isArray(patterns.today_hourly)){
+        const labels = patterns.today_hourly.map(h => {
+          const hr = Number(h.hour);
+          const hour = (hr % 12) || 12;
+          const ampm = hr >= 12 ? "PM" : "AM";
+          return `${hour}${ampm}`;
+        });
+        const vals = patterns.today_hourly.map(h => Math.round(Number(h.occupancy || 0) * 100));
+        state.charts.hourly.data.labels = labels;
+        state.charts.hourly.data.datasets[0].data = vals;
+        state.charts.hourly.update("none");
+      }
+      if(Array.isArray(patterns.week_same_time)){
+        // Map occupancy values, using null for days without data (graph will skip these)
+        const vals = patterns.week_same_time.map(d => {
+          if(d.occupancy === null || d.occupancy === undefined) return null;
+          return Math.round(Number(d.occupancy) * 100);
+        });
+        state.charts.weekly.data.datasets[0].data = vals;
+        state.charts.weekly.update("none");
+      }
+    }
+
+    function updateRatingsPieChart(distribution){
+      if(!distribution || !state.charts.ratings) return;
+
+      const ratingColors = {
+        1: '#ef4444',  // Red
+        2: '#f97316',  // Orange
+        3: '#f59e0b',  // Amber
+        4: '#10b981',  // Green
+        5: '#16a34a',  // Dark green
+        6: '#059669'   // Emerald
+      };
+
+      const labels = [];
+      const data = [];
+      const colors = [];
+
+      // Process ratings 1-6
+      for(let rating = 1; rating <= 6; rating++) {
+        const count = distribution[rating] || 0;
+        if(count > 0) {
+          labels.push(String(rating));
+          data.push(count);
+          colors.push(ratingColors[rating]);
+        }
+      }
+
+      // Update chart
+      state.charts.ratings.data.labels = labels;
+      state.charts.ratings.data.datasets[0].data = data;
+      state.charts.ratings.data.datasets[0].backgroundColor = colors;
+      state.charts.ratings.update("none");
+    }
+
+    // Custom select helper
+    function createSelect(mountId, options, initialValue, onChange){
+      const mount = document.getElementById(mountId);
+      const wrap = document.createElement("div");
+      wrap.className = "select";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "selectBtn";
+      btn.innerHTML = `<span class="mono" id="${mountId}-label"></span><span class="chev" aria-hidden="true"></span>`;
+
+      const menu = document.createElement("div");
+      menu.className = "menu";
+
+      function setValue(v){
+        const found = options.find(o => o.value === v) || options[0];
+        document.getElementById(`${mountId}-label`).textContent = found.label;
+        menu.querySelectorAll(".opt").forEach(el => el.classList.remove("active"));
+        const active = menu.querySelector(`[data-value="${CSS.escape(found.value)}"]`);
+        if(active) active.classList.add("active");
+        onChange(found.value);
+      }
+
+      options.forEach(o => {
+        const opt = document.createElement("div");
+        opt.className = "opt";
+        opt.dataset.value = o.value;
+        opt.innerHTML = `<span>${escapeHtml(o.label)}</span>${o.hint ? `<span class="hint">${escapeHtml(o.hint)}</span>` : ""}`;
+        opt.addEventListener("click", () => {
+          menu.classList.remove("open");
+          setValue(o.value);
+        });
+        menu.appendChild(opt);
+      });
+
+      btn.addEventListener("click", () => {
+        menu.classList.toggle("open");
+      });
+
+      document.addEventListener("click", (e) => {
+        if(!wrap.contains(e.target)) menu.classList.remove("open");
+      });
+
+      wrap.appendChild(btn);
+      wrap.appendChild(menu);
+      mount.replaceWith(wrap);
+      wrap.id = mountId;
+
+      setValue(initialValue);
+
+      return { setValue, getValue: () => options.find(o => document.getElementById(`${mountId}-label`).textContent === o.label)?.value };
+    }
+
+    // Controls actions
+    function showControlStatus(text){
+      const el = document.getElementById("control-status");
+      el.style.display = "inline-flex";
+      el.textContent = text;
+      setTimeout(()=>{ el.style.display = "none"; }, 2200);
+    }
+
+
+    function startMock(){
+      socket.emit("start_mock_data", { scenario: state.mockScenario, update_interval: state.mockInterval }, () => {});
+      log(`Mock started (${state.mockScenario}, ${state.mockInterval}s)`);
+    }
+    function stopMock(){
+      socket.emit("stop_mock_data", {}, () => {});
+      log("Mock stopped");
+      
+      // Clear simulated data from UI
+      // Clear Module 1 (Crowd)
+      const m1Grid = document.getElementById("m1-grid");
+      if(m1Grid) {
+        m1Grid.innerHTML = "";
+        state.health.m1.mode = "idle";
+        state.health.m1.lastSeen = 0;
+        setModuleStatus("m1-status", "idle");
+      }
+      
+      // Clear Module 2 (Environment)
+      const m2Grid = document.getElementById("m2-grid");
+      if(m2Grid) {
+        m2Grid.innerHTML = "";
+        state.health.m2.mode = "idle";
+        state.health.m2.lastSeen = 0;
+        setModuleStatus("m2-status", "idle");
+      }
+      
+      // Clear Module 3 (Feedback)
+      const m3Grid = document.getElementById("m3-grid");
+      if(m3Grid) {
+        m3Grid.innerHTML = "";
+        state.health.m3.mode = "idle";
+        state.health.m3.lastSeen = 0;
+        setModuleStatus("m3-status", "idle");
+      }
+      
+      // Module 5 will be cleared by the DisplayUpdate event with disconnected flag
+    }
+    function updateMockConfig(){
+      if(!state.mockActive) return;
+      socket.emit("update_mock_config", { scenario: state.mockScenario, update_interval: state.mockInterval }, () => {});
+      log(`Mock config updated (${state.mockScenario}, ${state.mockInterval}s)`);
+    }
+
+    function sendMockDataOnce(){
+      if(!state.mockActive) {
+        log("Mock mode must be active to send data");
+        return;
+      }
+      log(`Sending mock data (scenario: ${state.mockScenario})...`);
+      socket.emit("send_mock_data_once", { scenario: state.mockScenario }, (response) => {
+        if(response && response.status === 'success'){
+          log(`✓ Mock data sent: ${response.message}`);
+          console.log("Mock data send response:", response);
+        } else {
+          log("✗ Failed to send mock data");
+          console.error("Mock data send failed:", response);
+        }
+      });
+    }
+
+    function startPolling(){
+      if(state.pollInterval) clearInterval(state.pollInterval);
+      
+      const poll = async () => {
+        try {
+          const response = await fetch('/api/current_data');
+          if(!response.ok) {
+            console.warn("Polling failed:", response.status);
+            return;
+          }
+          const data = await response.json();
+          
+          // Create a hash to detect changes
+          const dataHash = JSON.stringify({
+            crowd: data.crowd,
+            environment: data.environment,
+            feedback: data.feedback,
+            module5: data.module5
+          });
+          
+          // Only update if data has changed
+          if(dataHash !== state.lastDataHash) {
+            state.lastDataHash = dataHash;
+            console.log("Data changed, updating UI...");
+            
+            // Update UI with new data
+            if(data.crowd) {
+              renderCrowd(data.crowd);
+            }
+            if(data.environment) {
+              renderEnvironment(data.environment);
+            }
+            if(data.feedback) {
+              renderFeedback(data.feedback);
+            }
+            // Always try to update Module 5 if data exists
+            if(data.module5) {
+              console.log("Updating Module 5 preview from polling:", data.module5);
+              try {
+                updateModule5Preview(data.module5);
+                console.log("✓ Module 5 preview updated successfully");
+              } catch(error) {
+                console.error("Error updating Module 5 preview:", error);
+              }
+            } else {
+              console.log("No Module 5 data available (need crowd or environment data)");
+            }
+          }
+        } catch(error) {
+          console.error("Polling error:", error);
+        }
+      };
+      
+      // Poll immediately, then every 2 seconds
+      poll();
+      state.pollInterval = setInterval(poll, 2000);
+      log("Polling started (every 2 seconds)");
+    }
+
+    function stopPolling(){
+      if(state.pollInterval) {
+        clearInterval(state.pollInterval);
+        state.pollInterval = null;
+        log("Polling stopped");
+      }
+    }
+
+    // Wire UI
+    function wireUi(){
+      document.getElementById("server-origin").textContent = window.location.origin;
+      // Mock mode moved to /debug page
+    }
+
+    // Socket events (same logic, plus snapshot handler)
+    socket.on("connect", () => {
+      document.getElementById("server-status-text").textContent = "Online";
+      setDot("dot-server", "online");
+      setDot("dot-dbg", "online");
+      document.getElementById("dbg-socket").textContent = "connected";
+      document.getElementById("dbg-conn").textContent = "Live";
+      log("Connected to server");
+    });
+
+    socket.on("disconnect", () => {
+      document.getElementById("server-status-text").textContent = "Offline";
+      setDot("dot-server", "offline");
+      setDot("dot-dbg", "offline");
+      setDot("dot-m5", "offline");
+      document.getElementById("dbg-socket").textContent = "disconnected";
+      document.getElementById("dbg-m5").textContent = "—";
+      document.getElementById("kpi-m5").textContent = "Waiting";
+      document.getElementById("dbg-conn").textContent = "Disconnected";
+      setModuleStatus("m1-status", "idle");
+      setModuleStatus("m2-status", "idle");
+      setModuleStatus("m3-status", "idle");
+      log("Disconnected from server");
+    });
+
+    socket.on("current_data_snapshot", (snapshot) => {
+      // This fixes “it hasn’t updated” on load (initial render)
+      log("Received current data snapshot");
+      if(snapshot && snapshot.crowd) renderCrowd(snapshot.crowd);
+      if(snapshot && snapshot.environment) renderEnvironment(snapshot.environment);
+      if(snapshot && snapshot.feedback && snapshot.feedback.length){
+        renderFeedback(snapshot.feedback[snapshot.feedback.length - 1]);
+      }
+    });
+
+    socket.on("module_connected", (data) => {
+      const t = data && data.module_type ? data.module_type : null;
+      const id = data && data.module_id ? data.module_id : null;
+      if(t && id && state.connectedModules[t] && !state.connectedModules[t].includes(id)){
+        state.connectedModules[t].push(id);
+        updateKpis();
+      }
+      
+      // Update module status display based on module type
+      if(t === 'crowd_detection') {
+        setModuleStatus("m1-status", "active");
+        state.health.m1.lastSeen = Date.now();
+        state.health.m1.mode = "active";
+        log(`Module 1 (${id}) connected and active`);
+      } else if(t === 'environment') {
+        setModuleStatus("m2-status", "active");
+        state.health.m2.lastSeen = Date.now();
+        state.health.m2.mode = "active";
+        log(`Module 2 (${id}) connected and active`);
+      } else if(t === 'feedback') {
+        setModuleStatus("m3-status", "active");
+        state.health.m3.lastSeen = Date.now();
+        state.health.m3.mode = "active";
+        log(`Module 3 (${id}) connected and active`);
+      } else if(t === 'display') {
+        // Module 5 display connected
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = id || "connected";
+        log(`Module 5 (${id}) connected and active`);
+      }
+      
+      log(`Module connected (${t || "unknown"}: ${id || "unknown"})`);
+    });
+
+    socket.on("mock_status", (data) => {
+      // Mock mode moved to /debug page - just update state for logging
+      if(!data) return;
+      if(data.active){
+        state.mockActive = true;
+        state.mockScenario = data.scenario || "normal";
+        state.mockInterval = Number(data.update_interval || 30);
+        log("Mock mode is active (server)");
+      } else {
+        state.mockActive = false;
+      }
+    });
+
+    socket.on("DisplayUpdate", (data) => {
+      console.log("DisplayUpdate event received:", data);
+      log("Module 5 display update received");
+      if(data){
+        updateModule5Preview(data);
+      } else {
+        console.warn("DisplayUpdate received but data is null/undefined");
+      }
+    });
+    
+    // Module 5 display connection events
+    socket.on("module5_display_status", (data) => {
+      console.log("Module 5 display status:", data);
+      const connected = data.connected || false;
+      const count = data.count || 0;
+      const modules = data.modules || [];
+      
+      if(connected && count > 0) {
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        // Show first module ID or count if multiple
+        if(modules.length > 0) {
+          document.getElementById("dbg-m5").textContent = modules[0] + (count > 1 ? ` (+${count-1})` : "");
+        } else {
+          document.getElementById("dbg-m5").textContent = `${count} connected`;
+        }
+        log(`Module 5 display status: ${count} connected`);
+      } else {
+        state.health.m5.mode = "idle";
+        state.health.m5.lastSeen = 0;
+        document.getElementById("kpi-m5").textContent = "Waiting";
+        setDot("dot-m5", "offline");
+        document.getElementById("dbg-m5").textContent = "—";
+        log("Module 5 display status: none connected");
+      }
+    });
+    
+    socket.on("module5_display_connected", (data) => {
+      console.log("Module 5 display connected:", data);
+      const moduleId = data.module_id || "unknown";
+      const count = data.count || 0;
+      state.health.m5.lastSeen = Date.now();
+      state.health.m5.mode = "active";
+      document.getElementById("kpi-m5").textContent = "Active";
+      setDot("dot-m5", "online");
+      document.getElementById("dbg-m5").textContent = moduleId;
+      log(`Module 5 display connected: ${moduleId} (${count} total)`);
+    });
+    
+    socket.on("module5_display_disconnected", (data) => {
+      console.log("Module 5 display disconnected:", data);
+      const count = data.count || 0;
+      if(count === 0) {
+        // No Module 5 displays connected anymore
+        state.health.m5.mode = "idle";
+        state.health.m5.lastSeen = 0;
+        document.getElementById("kpi-m5").textContent = "Waiting";
+        setDot("dot-m5", "offline");
+        document.getElementById("dbg-m5").textContent = "—";
+        log("Module 5 display disconnected (none connected)");
+      } else {
+        // Still have other Module 5 displays connected
+        // Update status to show remaining count
+        state.health.m5.lastSeen = Date.now();
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = `${count} connected`;
+        log(`Module 5 display disconnected (${count} still connected)`);
+      }
+    });
+    socket.on("crowd_update", (data) => {
+      console.log("Crowd update event received:", data);
+      log("Crowd update received");
+      if(data) {
+        // Check if this is a clear signal
+        if(data.cleared) {
+          const m1Grid = document.getElementById("m1-grid");
+          if(m1Grid) m1Grid.innerHTML = "";
+          state.health.m1.mode = "idle";
+          state.health.m1.lastSeen = 0;
+          state.latestCrowdData = null;  // Clear stored crowd data
+          setModuleStatus("m1-status", "idle");
+          log("Crowd data cleared");
+          return;
+        }
+        try {
+          renderCrowd(data);
+          console.log("✓ Crowd data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering crowd data:", error);
+          log(`Error rendering crowd: ${error.message}`);
+        }
+      } else {
+        console.warn("Crowd update received but data is null/undefined");
+      }
+    });
+    
+    socket.on("crowd_video_update", (data) => {
+      console.log("Crowd video update event received:", data);
+      log("Video frame received from " + (data.module_id || "unknown"));
+      
+      // Update module status when video frames are received
+      if(data.module_id) {
+        state.health.m1.lastSeen = Date.now();
+        setModuleStatus("m1-status", "active");
+        log(`Module ${data.module_id} is active (sending video frames)`);
+      }
+      
+      // Display video frame image if available
+      if(data.video_frame) {
+        try {
+          const imageContainer = document.getElementById("m1-image-container");
+          const imageElement = document.getElementById("m1-image");
+          if(imageContainer && imageElement) {
+            // Store video frame for analysis
+            currentVideoFrameBase64 = data.video_frame;
+            
+            // Set image source from base64 data
+            imageElement.src = "data:image/jpeg;base64," + data.video_frame;
+            imageContainer.style.display = "block";
+            console.log("✓ Video frame image displayed");
+            
+            // Enable analyze button when video frame is available
+            const analyzeBtn = document.getElementById("ai-analyze-btn");
+            if(analyzeBtn) {
+              analyzeBtn.disabled = false;
+              analyzeBtn.style.opacity = "1";
+              analyzeBtn.style.cursor = "pointer";
+              // Update image name display
+              document.getElementById("ai-image-name").textContent = "Video frame (ready to analyze)";
+            }
+          }
+        } catch(error) {
+          console.error("Error displaying video frame image:", error);
+        }
+      }
+      
+      // If video frame includes crowd data, render it
+      if(data.data) {
+        try {
+          renderCrowd(data);
+        } catch(error) {
+          console.error("Error rendering crowd from video frame:", error);
+        }
+      }
+    });
+    socket.on("environment_update", (data) => {
+      console.log("Environment update event received:", data);
+      log("Environment update received");
+      if(data) {
+        // Check if this is a clear signal
+        if(data.cleared) {
+          const m2Grid = document.getElementById("m2-grid");
+          if(m2Grid) m2Grid.innerHTML = "";
+          state.health.m2.mode = "idle";
+          state.health.m2.lastSeen = 0;
+          setModuleStatus("m2-status", "idle");
+          log("Environment data cleared");
+          return;
+        }
+        try {
+          renderEnvironment(data);
+          console.log("✓ Environment data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering environment data:", error);
+          log(`Error rendering environment: ${error.message}`);
+        }
+      } else {
+        console.warn("Environment update received but data is null/undefined");
+      }
+    });
+    socket.on("feedback_update", (data) => {
+      console.log("Feedback update event received:", data);
+      log("Feedback update received");
+      if(data) {
+        try {
+          renderFeedback(data);
+          console.log("✓ Feedback data rendered successfully");
+        } catch(error) {
+          console.error("Error rendering feedback data:", error);
+          log(`Error rendering feedback: ${error.message}`);
+        }
+      } else {
+        console.warn("Feedback update received but data is null/undefined");
+      }
+    });
+    
+    socket.on("feedback_status_update", (data) => {
+      console.log("Feedback status update received:", data);
+      const isActive = data.is_active || false;
+      const statusElement = document.getElementById("m3-kiosk-status");
+      const indicatorElement = document.getElementById("m3-kiosk-indicator");
+      
+      if(statusElement && indicatorElement) {
+        if(isActive) {
+          statusElement.innerHTML = '<span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 5px; animation: pulse 2s infinite;"></span>In Use';
+          statusElement.style.background = "#d1fae5";
+          statusElement.style.color = "#065f46";
+          log(`Kiosk active (user detected${data.distance_cm ? `, ${data.distance_cm.toFixed(1)}cm away` : ""})`);
+        } else {
+          statusElement.innerHTML = '<span id="m3-kiosk-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; margin-right: 5px;"></span>Idle';
+          statusElement.style.background = "#e5e7eb";
+          statusElement.style.color = "#6b7280";
+          log("Kiosk idle (no user detected)");
+        }
+      }
+      
+      // Update latest rating and time since last interaction if available
+      const statsContainer = document.getElementById("m3-stats");
+      const latestRatingElement = document.getElementById("m3-latest-rating");
+      const lastInteractionElement = document.getElementById("m3-last-interaction");
+      
+      // Show stats container if we have rating data
+      if(statsContainer && (data.latest_rating !== null && data.latest_rating !== undefined || data.time_since_last_rating)) {
+        statsContainer.style.display = "block";
+      }
+      
+      if(latestRatingElement && data.latest_rating !== null && data.latest_rating !== undefined) {
+        const stars = "★".repeat(Math.max(0, Number(data.latest_rating)));
+        latestRatingElement.innerHTML = `${stars} <span style="font-size: 0.6em; color: var(--muted);">(${data.latest_rating}/5)</span>`;
+        latestRatingElement.style.color = data.latest_rating >= 4 ? "#10b981" : data.latest_rating >= 3 ? "#f59e0b" : "#ef4444";
+      }
+      
+      if(lastInteractionElement) {
+        if(data.time_since_last_rating) {
+          lastInteractionElement.textContent = data.time_since_last_rating;
+          lastInteractionElement.style.color = "var(--text)";
+          // Store timestamp for periodic updates
+          if(data.last_rating_timestamp) {
+            state.module3.lastRatingTimestamp = data.last_rating_timestamp;
+          }
+        } else {
+          lastInteractionElement.textContent = "Never";
+          lastInteractionElement.style.color = "var(--textMuted)";
+          state.module3.lastRatingTimestamp = null;
+        }
+      }
+      
+      // Store latest rating in state
+      if(data.latest_rating !== null && data.latest_rating !== undefined) {
+        state.module3.latestRating = data.latest_rating;
+      }
+    });
+    
+    // AI Image Analysis Functions
+    let selectedImageFile = null;
+    let currentVideoFrameBase64 = null; // Store current video frame for analysis
+    
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if(file) {
+        selectedImageFile = file;
+        const fileName = file.name;
+        const fileSize = (file.size / 1024).toFixed(1);
+        document.getElementById("ai-image-name").textContent = `${fileName} (${fileSize} KB)`;
+        
+        // Show image preview
+        const previewDiv = document.getElementById("ai-image-preview");
+        const previewImg = document.getElementById("ai-preview-img");
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          previewImg.src = e.target.result;
+          previewDiv.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+        
+        // Enable analyze button
+        const analyzeBtn = document.getElementById("ai-analyze-btn");
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = "1";
+        analyzeBtn.style.cursor = "pointer";
+        
+        // Hide previous results
+        document.getElementById("ai-analysis-result").style.display = "none";
+        
+        log(`Image selected: ${fileName}`);
+      }
+    }
+    
+    async function analyzeImage() {
+      // Check if we have a video frame or uploaded file
+      let imageToAnalyze = null;
+      let imageSource = null;
+      
+      if(currentVideoFrameBase64) {
+        // Convert base64 video frame to Blob
+        try {
+          const base64Data = currentVideoFrameBase64;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for(let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          imageToAnalyze = new Blob([byteArray], {type: 'image/jpeg'});
+          imageSource = "video_frame";
+        } catch(error) {
+          console.error("Error converting video frame to blob:", error);
+          alert("Error processing video frame. Please try again.");
+          return;
+        }
+      } else if(selectedImageFile) {
+        imageToAnalyze = selectedImageFile;
+        imageSource = "uploaded";
+      } else {
+        alert("Please select an image or wait for a video frame");
+        return;
+      }
+      
+      const analyzeBtn = document.getElementById("ai-analyze-btn");
+      const resultDiv = document.getElementById("ai-analysis-result");
+      
+      // Show loading state
+      analyzeBtn.disabled = true;
+      analyzeBtn.style.opacity = "0.5";
+      analyzeBtn.style.cursor = "not-allowed";
+      const originalText = analyzeBtn.textContent;
+      analyzeBtn.textContent = "Analyzing...";
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = '<div style="text-align: center; padding: var(--s16); color: var(--muted); font-size: 13px;">Analyzing image with AI...</div>';
+      
+      try {
+        const formData = new FormData();
+        // Create a File object from the Blob for FormData
+        const fileName = imageSource === "video_frame" ? "video_frame.jpg" : imageToAnalyze.name;
+        const file = imageToAnalyze instanceof File ? imageToAnalyze : new File([imageToAnalyze], fileName, {type: 'image/jpeg'});
+        formData.append('image', file);
+        
+        const response = await fetch('/api/analyze_image', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const data = await response.json();
+        
+        if(data.success && data.result) {
+          // Use shared function to display results
+          displayAnalysisResults(data);
+          
+          const result = data.result;
+          const count = data.people_count !== undefined ? data.people_count : (result.count || 0);
+          const confidence = data.confidence !== undefined ? data.confidence : (result.confidence || 0.85);
+          const confidencePercent = (confidence * 100).toFixed(0);
+          const crowdLevel = data.crowd_level || result.crowd_level || "unknown";
+          const module5Sent = data.module5_sent || false;
+          
+          log(`AI Analysis: ${count} people detected (${crowdLevel}, ${confidencePercent}% confidence)${module5Sent ? ' - Sent to Module 5' : ''}`);
+        } else {
+          resultDiv.innerHTML = `<div style="color: var(--danger); padding: var(--s12); font-size: 13px;">Error: ${data.error || "Unknown error"}</div>`;
+          log(`AI Analysis error: ${data.error || "Unknown error"}`, "error");
+        }
+      } catch(error) {
+        resultDiv.innerHTML = `<div style="color: var(--danger); padding: var(--s12); font-size: 13px;">Error: ${error.message}</div>`;
+        log(`AI Analysis error: ${error.message}`, "error");
+        console.error("Error analyzing image:", error);
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "Analyze";
+        analyzeBtn.style.opacity = "1";
+        analyzeBtn.style.cursor = "pointer";
+      }
+    }
+    
+    // Listen for AI analysis results via SocketIO
+    // Shared function to display analysis results
+    function displayAnalysisResults(data) {
+      const resultDiv = document.getElementById("ai-analysis-result");
+      if(!resultDiv) return;
+      
+      const result = data.result || data;
+      const count = data.people_count !== undefined ? data.people_count : (result.count || 0);
+      const confidence = data.confidence !== undefined ? data.confidence : (result.confidence || 0.85);
+      const confidencePercent = (confidence * 100).toFixed(0);
+      const details = result.details || "No description";
+      const crowdLevel = data.crowd_level || result.crowd_level || "unknown";
+      const module5Sent = data.module5_sent || false;
+      
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = `
+        <div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s12);">
+            <div style="font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em;">Analysis Results</div>
+            ${module5Sent ? '<div style="font-size: 11px; color: var(--success); font-weight: 500;">✓ Sent to Module 5</div>' : ''}
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s16); margin-bottom: var(--s16);">
+            <div>
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">People Count</div>
+              <div style="font-size: 24px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.2;">${count}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Confidence</div>
+              <div style="font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: 1.2;">${confidencePercent}%</div>
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s4); font-weight: 500;">Crowd Level</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.02em;">${crowdLevel}</div>
+            </div>
+            <div style="grid-column: 1 / -1; padding-top: var(--s12); border-top: 1px solid var(--borderSubtle);">
+              <div style="font-size: 12px; color: var(--muted); margin-bottom: var(--s8); font-weight: 500;">Details</div>
+              <div style="font-size: 13px; color: var(--text); line-height: 1.5;">${details}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    socket.on("ai_analysis_result", (data) => {
+      console.log("AI analysis result received:", data);
+      if(data.result || data.people_count !== undefined) {
+        const result = data.result || data;
+        log(`AI Analysis complete: ${result.count || data.people_count || 0} people detected (broadcast from another dashboard)`);
+        
+        // Update analysis results display on all dashboards
+        displayAnalysisResults(data);
+        
+        // Reset analyze button state
+        const analyzeBtn = document.getElementById("ai-analyze-btn");
+        if(analyzeBtn) {
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = "Analyze";
+          analyzeBtn.style.opacity = "1";
+          analyzeBtn.style.cursor = "pointer";
+        }
+      }
+    });
+
+    // Boot
+    $(document).ready(function(){
+      wireUi();
+      initCharts();
+      setDot("dot-m5", "offline");
+      document.getElementById("dbg-m5").textContent = "—";
+
+      // Mock mode selects moved to /debug page
+
+      updateKpis();
+      log("Dashboard ready");
+      
+      // Start polling for data updates every 2 seconds
+      startPolling();
+
+      // Health tick: if no recent data, show Idle instead of sticking on Active.
+      setModuleStatus("m1-status", "idle");
+      setModuleStatus("m2-status", "idle");
+      setModuleStatus("m3-status", "idle");
+      setInterval(() => {
+        const now = Date.now();
+        const staleMs = 60000; // 60s without data -> idle
+
+        const m1 = state.health.m1;
+        if(m1.lastSeen && (now - m1.lastSeen) > staleMs) { m1.mode = "idle"; }
+        setModuleStatus("m1-status", m1.mode, m1.mode === "idle" ? null : (m1.mode === "mock" ? "simulated" : "data"));
+
+        const m2 = state.health.m2;
+        if(m2.lastSeen && (now - m2.lastSeen) > staleMs) { m2.mode = "idle"; }
+        setModuleStatus("m2-status", m2.mode, m2.mode === "idle" ? null : (m2.mode === "mock" ? "simulated" : "data"));
+
+        const m3 = state.health.m3;
+        if(m3.lastSeen && (now - m3.lastSeen) > staleMs) { m3.mode = "idle"; }
+        setModuleStatus("m3-status", m3.mode, m3.mode === "idle" ? null : (m3.mode === "mock" ? "simulated" : "data"));
+
+        // Module 5: only indicates dashboard is receiving display payloads; timeout to Waiting.
+        const m5 = state.health.m5;
+        if(m5.lastSeen && (now - m5.lastSeen) > staleMs) {
+          document.getElementById("kpi-m5").textContent = "Waiting";
+          setDot("dot-m5", "offline");
+          document.getElementById("dbg-m5").textContent = "—";
+        }
+        
+        // Update time since last rating interaction (refresh every 30 seconds)
+        const lastInteractionElement = document.getElementById("m3-last-interaction");
+        if(lastInteractionElement && state.module3.lastRatingTimestamp) {
+          try {
+            const lastRatingDate = new Date(state.module3.lastRatingTimestamp);
+            const timeDiff = (Date.now() - lastRatingDate.getTime()) / 1000; // seconds
+            
+            let timeStr;
+            if(timeDiff < 60) {
+              timeStr = `${Math.floor(timeDiff)}s ago`;
+            } else if(timeDiff < 3600) {
+              timeStr = `${Math.floor(timeDiff / 60)}m ago`;
+            } else if(timeDiff < 86400) {
+              timeStr = `${Math.floor(timeDiff / 3600)}h ago`;
+            } else {
+              timeStr = `${Math.floor(timeDiff / 86400)}d ago`;
+            }
+            
+            lastInteractionElement.textContent = timeStr;
+            lastInteractionElement.style.color = "var(--text)";
+          } catch(e) {
+            console.warn("Error updating time since last rating:", e);
+          }
+        }
+      }, 2000);
+    });
+  </script>
+</body>
+</html>

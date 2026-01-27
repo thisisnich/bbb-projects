@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Sports Dashboard - Login</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    :root{
+      --bg: #ffffff;
+      --card: #ffffff;
+      --surface: #fafafa;
+      --text: #0a0a0a;
+      --textSecondary: #525252;
+      --textMuted: #737373;
+      --textFaint: #a3a3a3;
+      --border: rgba(0,0,0,0.12);
+      --borderSubtle: rgba(0,0,0,0.06);
+      --accent: #2563eb;
+      --accentBg: rgba(37,99,235,0.08);
+      --accentBorder: rgba(37,99,235,0.2);
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #ea580c;
+      --s4: 4px;
+      --s8: 8px;
+      --s12: 12px;
+      --s16: 16px;
+      --s24: 24px;
+      --s32: 32px;
+      --r4: 4px;
+      --r6: 6px;
+      --r8: 8px;
+      --r12: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .login-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--s24);
+    }
+
+    .login-card {
+      background: var(--card);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r12);
+      padding: var(--s32);
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .login-header {
+      margin-bottom: var(--s32);
+      text-align: center;
+    }
+
+    .login-header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin: 0 0 var(--s8) 0;
+    }
+
+    .login-header p {
+      font-size: 13px;
+      color: var(--textMuted);
+      margin: 0;
+    }
+
+    .error-message {
+      background: rgba(220,38,38,0.08);
+      border: 0.5px solid rgba(220,38,38,0.2);
+      color: var(--danger);
+      padding: var(--s12);
+      border-radius: var(--r6);
+      margin-bottom: var(--s16);
+      font-size: 13px;
+      display: none;
+    }
+
+    .form-group {
+      margin-bottom: var(--s16);
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: var(--s8);
+      letter-spacing: -0.01em;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: var(--s12) var(--s16);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r6);
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--card);
+      color: var(--text);
+      transition: border-color 150ms;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: var(--s12) var(--s16);
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--r6);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 150ms;
+      font-family: inherit;
+    }
+
+    .login-btn:hover {
+      background: #1d4ed8;
+    }
+
+    .login-btn:active {
+      background: #1e40af;
+    }
+
+    .demo-credentials {
+      margin-top: var(--s24);
+      padding: var(--s16);
+      background: var(--surface);
+      border: 0.5px solid var(--borderSubtle);
+      border-radius: var(--r8);
+      font-size: 12px;
+      color: var(--textMuted);
+    }
+
+    .demo-credentials strong {
+      display: block;
+      margin-bottom: var(--s8);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .demo-credentials code {
+      background: var(--card);
+      padding: 2px 6px;
+      border-radius: var(--r4);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>Smart Sports Dashboard</h1>
+        <p>Sign in to access your dashboard</p>
+      </div>
+
+      <div class="error-message" id="errorMessage">
+        Invalid credentials. Please try again.
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required placeholder="Enter your username" autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required placeholder="Enter your password" autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="login-btn">Sign In</button>
+      </form>
+
+      <div class="demo-credentials">
+        <strong>Demo Credentials</strong>
+        <div style="margin-top: var(--s8);">
+          <strong>Guest:</strong> <code>guest1</code> / <code>guest123</code><br>
+          <strong>Guest:</strong> <code>guest2</code> / <code>guest456</code>
+        </div>
+        <div style="margin-top: var(--s8);">
+          <strong>Personnel:</strong> <code>admin</code> / <code>admin123</code><br>
+          <strong>Personnel:</strong> <code>staff</code> / <code>staff123</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function handleLogin(event) {
+      event.preventDefault();
+      
+      const username = $('#username').val();
+      const password = $('#password').val();
+
+      // Send login request - server will auto-detect role based on credentials
+      $.ajax({
+        url: '/login',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+          username: username,
+          password: password
+        }),
+        success: function(response) {
+          if (response.success) {
+            // Store role in sessionStorage for client-side checks
+            sessionStorage.setItem('role', response.role);
+            sessionStorage.setItem('username', response.username);
+            
+            // Redirect based on role
+            if (response.role === 'guest') {
+              window.location.href = '/guest_dashboard';
+            } else {
+              window.location.href = '/personnel_dashboard';
+            }
+          } else {
+            $('#errorMessage').text(response.message || 'Invalid credentials').fadeIn();
+            setTimeout(() => $('#errorMessage').fadeOut(), 3000);
+          }
+        },
+        error: function(xhr) {
+          const response = xhr.responseJSON || {};
+          $('#errorMessage').text(response.message || 'Login failed. Please try again.').fadeIn();
+          setTimeout(() => $('#errorMessage').fadeOut(), 3000);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

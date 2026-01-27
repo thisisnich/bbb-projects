@@ -101,7 +101,9 @@ def login_required(role=None):
     return decorator
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 # --- Comprehensive Data Storage System ---
+>>>>>>> c668bf5 (Add authentication system with role-based dashboards)
 # --- Historical Data Storage ---
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
 HISTORY_DB = os.path.join(os.path.dirname(__file__), 'history.db')
