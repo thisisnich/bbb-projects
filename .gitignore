@@ -9,3 +9,11 @@ venv/
 history.json
 history.db
 *.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data
+Assignment/group_project/data/

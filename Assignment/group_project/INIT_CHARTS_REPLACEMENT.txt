@@ -1,0 +1,118 @@
+// Copy this to replace initCharts() in personnel_dashboard.html
+
+function initCharts(){
+  console.log("=== INITIALIZING CHARTS ===");
+  
+  const crowdHourly = document.getElementById("chart-crowd-hourly");
+  const crowdWeekly = document.getElementById("chart-crowd-weekly");
+  const envRecent = document.getElementById("chart-env-recent");
+  const envWeekly = document.getElementById("chart-env-weekly");
+  const ratingDist = document.getElementById("chart-rating-dist");
+  
+  if(crowdHourly) {
+    state.charts.crowdHourly = new Chart(crowdHourly, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{
+          label: "Occupancy",
+          data: [],
+          borderColor: "#2563eb",
+          backgroundColor: "rgba(37,99,235,0.1)",
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, max: 100 } }
+      }
+    });
+  }
+  
+  if(crowdWeekly) {
+    state.charts.crowdWeekly = new Chart(crowdWeekly, {
+      type: "bar",
+      data: {
+        labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+        datasets: [{
+          label: "Avg Occupancy",
+          data: [],
+          backgroundColor: "rgba(37,99,235,0.7)"
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, max: 100 } }
+      }
+    });
+  }
+  
+  if(envRecent) {
+    state.charts.envRecent = new Chart(envRecent, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
+          { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
+          { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
+          { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true, position: "top", labels: { font: { size: 10 } } } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+  
+  if(envWeekly) {
+    state.charts.envWeekly = new Chart(envWeekly, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
+          { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
+          { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
+          { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true, position: "top", labels: { font: { size: 10 } } } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+  
+  if(ratingDist) {
+    state.charts.ratingDist = new Chart(ratingDist, {
+      type: "pie",
+      data: {
+        labels: [],
+        datasets: [{
+          data: [],
+          backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#16a34a', '#059669']
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'right', labels: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+  
+  console.log("=== CHARTS INITIALIZED ===");
+}
