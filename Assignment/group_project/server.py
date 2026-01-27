@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from functools import wraps
 import eventlet
 from eventlet import wsgi
 from flask_socketio import SocketIO, emit
@@ -11,6 +12,8 @@ import base64
 import os
 import sys
 from collections import defaultdict
+import sqlite3
+from statistics import mean
 
 # AI Image Recognition (Claude API)
 ANTHROPIC_AVAILABLE = False
@@ -68,11 +71,276 @@ if ANTHROPIC_AVAILABLE:
 app = Flask(__name__)
 # Set max content length for file uploads (16MB as per documentation)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+# Session secret key for authentication
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
+# User credentials (in production, use a database)
+USERS = {
+    'guest': {
+        'guest1': 'guest123',
+        'guest2': 'guest456'
+    },
+    'personnel': {
+        'admin': 'admin123',
+        'staff': 'staff123'
+    }
+}
+
+# Authentication decorator
+def login_required(role=None):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            if role and session.get('role') != role:
+                return redirect(url_for('login'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+<<<<<<< HEAD
 # --- Comprehensive Data Storage System ---
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
+# --- Historical Data Storage ---
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
+HISTORY_DB = os.path.join(os.path.dirname(__file__), 'history.db')
+USE_DATABASE = True  # Set to False to use JSON files instead
+
+# Minute-based averaging buffers (collect data for 1 minute, then save average)
+minute_buffers = {
+    'module1_crowd': [],      # {people_count, noise_db, timestamp}
+    'module1_audio': [],      # {noise_db, timestamp}
+    'module2_env': [],        # {temperature_c, humidity_percent, pressure_hpa, uv_index, voc_level, comfort_score, timestamp}
+    'module3_feedback': []    # {rating, timestamp} - only save when rating occurs
+}
+buffer_lock = threading.Lock()
+
+# ===== DATABASE FUNCTIONS =====
+
+def init_database():
+    """Initialize SQLite database with tables for all modules"""
+    if not USE_DATABASE:
+        return
+    
+    try:
+        conn = sqlite3.connect(HISTORY_DB)
+        cursor = conn.cursor()
+        
+        # Module 1: Crowd detection (people count)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS module1_crowd (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                people_count INTEGER,
+                noise_db REAL,
+                UNIQUE(timestamp)
+            )
+        ''')
+        
+        # Module 1: Audio (noise levels)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS module1_audio (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                noise_db REAL,
+                UNIQUE(timestamp)
+            )
+        ''')
+        
+        # Module 2: Environment data
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS module2_environment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                temperature_c REAL,
+                humidity_percent REAL,
+                pressure_hpa REAL,
+                uv_index REAL,
+                voc_level TEXT,
+                comfort_score REAL,
+                UNIQUE(timestamp)
+            )
+        ''')
+        
+        # Module 3: Feedback/ratings
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS module3_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                rating INTEGER,
+                report_type TEXT,
+                UNIQUE(timestamp)
+            )
+        ''')
+        
+        # Create indexes for faster queries
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_module1_crowd_timestamp ON module1_crowd(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_module1_audio_timestamp ON module1_audio(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_module2_env_timestamp ON module2_environment(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_module3_feedback_timestamp ON module3_feedback(timestamp)')
+        
+        conn.commit()
+        conn.close()
+        print(f"[INFO] Database initialized: {HISTORY_DB}")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize database: {e}")
+        import traceback
+        traceback.print_exc()
+
+def save_minute_averages():
+    """Save averaged data from minute buffers to database/JSON"""
+    global minute_buffers
+    
+    with buffer_lock:
+        now = datetime.now()
+        timestamp_str = now.isoformat()
+        
+        # Module 1: Crowd + Audio
+        if minute_buffers['module1_crowd']:
+            entries = minute_buffers['module1_crowd']
+            avg_people = int(mean([e.get('people_count', 0) for e in entries]))
+            avg_noise = mean([e.get('noise_db', 0) for e in entries if e.get('noise_db') is not None]) if any(e.get('noise_db') for e in entries) else None
+            
+            if USE_DATABASE:
+                try:
+                    conn = sqlite3.connect(HISTORY_DB)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO module1_crowd (timestamp, people_count, noise_db)
+                        VALUES (?, ?, ?)
+                    ''', (timestamp_str, avg_people, avg_noise))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"[ERROR] Failed to save Module 1 crowd data: {e}")
+            else:
+                # Fallback to JSON for Module 1 crowd (backward compatibility)
+                global historical_data
+                historical_data = update_history(avg_people, now)
+            
+            # Save audio separately
+            if avg_noise is not None and minute_buffers['module1_audio']:
+                if USE_DATABASE:
+                    try:
+                        conn = sqlite3.connect(HISTORY_DB)
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO module1_audio (timestamp, noise_db)
+                            VALUES (?, ?)
+                        ''', (timestamp_str, avg_noise))
+                        conn.commit()
+                        conn.close()
+                    except Exception as e:
+                        print(f"[ERROR] Failed to save Module 1 audio data: {e}")
+            
+            minute_buffers['module1_crowd'] = []
+            minute_buffers['module1_audio'] = []
+        
+        # Module 2: Environment
+        if minute_buffers['module2_env']:
+            entries = minute_buffers['module2_env']
+            avg_temp = mean([e.get('temperature_c', 0) for e in entries if e.get('temperature_c') is not None]) if any(e.get('temperature_c') for e in entries) else None
+            avg_humidity = mean([e.get('humidity_percent', 0) for e in entries if e.get('humidity_percent') is not None]) if any(e.get('humidity_percent') for e in entries) else None
+            avg_pressure = mean([e.get('pressure_hpa', 0) for e in entries if e.get('pressure_hpa') is not None]) if any(e.get('pressure_hpa') for e in entries) else None
+            avg_uv = mean([e.get('uv_index', 0) for e in entries if e.get('uv_index') is not None]) if any(e.get('uv_index') for e in entries) else None
+            avg_comfort = mean([e.get('comfort_score', 0) for e in entries if e.get('comfort_score') is not None]) if any(e.get('comfort_score') for e in entries) else None
+            # VOC level: use most common value
+            voc_levels = [e.get('voc_level') for e in entries if e.get('voc_level')]
+            most_common_voc = max(set(voc_levels), key=voc_levels.count) if voc_levels else None
+            
+            if USE_DATABASE:
+                try:
+                    conn = sqlite3.connect(HISTORY_DB)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO module2_environment 
+                        (timestamp, temperature_c, humidity_percent, pressure_hpa, uv_index, voc_level, comfort_score)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (timestamp_str, avg_temp, avg_humidity, avg_pressure, avg_uv, most_common_voc, avg_comfort))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"[ERROR] Failed to save Module 2 environment data: {e}")
+            
+            minute_buffers['module2_env'] = []
+        
+        # Module 3: Feedback (save immediately, not averaged)
+        # This is handled separately in handle_feedback_data
+
+def add_to_buffer(buffer_name, data):
+    """Add data point to minute buffer"""
+    with buffer_lock:
+        if buffer_name in minute_buffers:
+            minute_buffers[buffer_name].append(data)
+
+def start_minute_averaging_thread():
+    """Start background thread to save minute averages"""
+    def averaging_loop():
+        while True:
+            time.sleep(60)  # Wait 1 minute
+            save_minute_averages()
+    
+    thread = threading.Thread(target=averaging_loop, daemon=True)
+    thread.start()
+    print("[INFO] Minute-based averaging thread started")
+
+def get_history_from_db(module, start_date=None, end_date=None, limit=1000):
+    """Query historical data from database
+    
+    Args:
+        module: 'module1_crowd', 'module1_audio', 'module2_environment', or 'module3_feedback'
+        start_date: datetime object or ISO string (optional)
+        end_date: datetime object or ISO string (optional)
+        limit: maximum number of records to return
+    
+    Returns:
+        List of dictionaries with historical data
+    """
+    if not USE_DATABASE:
+        return []
+    
+    try:
+        conn = sqlite3.connect(HISTORY_DB)
+        conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+        cursor = conn.cursor()
+        
+        # Convert dates to ISO strings if needed
+        if start_date and isinstance(start_date, datetime):
+            start_date = start_date.isoformat()
+        if end_date and isinstance(end_date, datetime):
+            end_date = end_date.isoformat()
+        
+        # Build query
+        query = f"SELECT * FROM {module}"
+        params = []
+        conditions = []
+        
+        if start_date:
+            conditions.append("timestamp >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("timestamp <= ?")
+            params.append(end_date)
+        
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        # Convert to list of dictionaries
+        result = [dict(row) for row in rows]
+        
+        conn.close()
+        return result
+    except Exception as e:
+        print(f"[ERROR] Failed to query database: {e}")
+        return []
+>>>>>>> 5cbae18 (Add history system implementation)
 
 # Data storage files
 CROWD_DATA_FILE = os.path.join(DATA_DIR, 'crowd_history.json')
@@ -485,6 +753,21 @@ def get_weekly_pattern(history, current_hour, current_people_count, capacity=10)
     
     return week_same_time
 
+<<<<<<< HEAD
+# Initialize all historical data on startup
+historical_data = load_crowd_history()
+crowd_entry_count = len(historical_data.get('entries', []))
+
+environment_history = load_environment_history()
+env_entry_count = len(environment_history.get('entries', []))
+
+feedback_history = load_feedback_history()
+feedback_entry_count = len(feedback_history.get('entries', []))
+
+module_states = load_module_states()
+connection_history = load_connection_history()
+connection_count = len(connection_history.get('connections', []))
+
 # Initialize all historical data on startup
 historical_data = load_crowd_history()
 crowd_entry_count = len(historical_data.get('entries', []))
@@ -505,6 +788,17 @@ print(f"  - Environment data: {env_entry_count} entries")
 print(f"  - Feedback data: {feedback_entry_count} entries")
 print(f"  - Connection history: {connection_count} events")
 
+# Initialize history on startup
+if USE_DATABASE:
+    init_database()
+else:
+    historical_data = load_history()
+    entry_count = len(historical_data.get('entries', []))
+    print(f"[INFO] Historical data loaded: {entry_count} entries tracked")
+
+# Start minute-based averaging thread
+start_minute_averaging_thread()
+
 # --- Data Storage ---
 connected_modules = {
     'crowd_detection': [],
@@ -523,6 +817,9 @@ module_status = {
     'feedback': {},
     'display': {}
 }
+
+# Track which socket IDs are feedback modules (Module 3)
+feedback_module_sockets = {}  # {socket_id: module_id}
 
 # Current data from each module type
 current_data = {
@@ -739,7 +1036,61 @@ def mock_data_loop():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    if 'user_id' in session:
+        role = session.get('role')
+        if role == 'guest':
+            return redirect(url_for('guest_dashboard'))
+        else:
+            return redirect(url_for('personnel_dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        # Auto-detect role by checking credentials in both user dictionaries
+        role = None
+        if username in USERS['personnel'] and USERS['personnel'][username] == password:
+            role = 'personnel'
+        elif username in USERS['guest'] and USERS['guest'][username] == password:
+            role = 'guest'
+        
+        # Validate credentials
+        if role:
+            session['user_id'] = username
+            session['role'] = role
+            session['username'] = username
+            return jsonify({
+                'success': True,
+                'role': role,
+                'username': username
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid username or password'
+            }), 401
+    
+    # GET request - show login page
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/guest_dashboard')
+@login_required(role='guest')
+def guest_dashboard():
+    return render_template('guest_dashboard.html', username=session.get('username', 'Guest'))
+
+@app.route('/personnel_dashboard')
+@login_required(role='personnel')
+def personnel_dashboard():
+    return render_template('personnel_dashboard.html', username=session.get('username', 'Personnel'))
 
 @app.route('/module5')
 def module5_test():
@@ -1363,6 +1714,10 @@ def handle_module_register(data):
         if module_type == 'display':
             display_module_sockets[socket_id] = module_id
         
+        # Track feedback module sockets
+        if module_type == 'feedback':
+            feedback_module_sockets[socket_id] = module_id
+        
         # Notify dashboard of new connection
         socketio.emit('module_connected', {
             'module_id': module_id,
@@ -1386,25 +1741,55 @@ def handle_crowd_data(data):
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
     
+<<<<<<< HEAD
     # Update module status
     module_id = data.get('module_id', 'unknown')
     update_module_status('crowd_detection', module_id, is_online=True)
     
     # Save to persistent storage with full historical records
+    # Add to minute buffer for averaging
     if 'data' in data:
         people_count = data['data'].get('people_count', 0)
-        occupancy = min(1.0, people_count / 10.0)
-        timestamp_str = data.get('timestamp')
-        if timestamp_str:
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            except:
+        noise_db = data['data'].get('noise_db')
+        timestamp = datetime.now()
+        
+        # Add to crowd buffer (includes both people_count and noise)
+        add_to_buffer('module1_crowd', {
+            'people_count': people_count,
+            'noise_db': noise_db,
+            'timestamp': timestamp
+        })
+        
+        # Also add to audio buffer if noise data available
+        if noise_db is not None:
+            add_to_buffer('module1_audio', {
+                'noise_db': noise_db,
+                'timestamp': timestamp
+            })
+        
+        # Legacy JSON support (for backward compatibility)
+        if not USE_DATABASE:
+            occupancy = min(1.0, people_count / 10.0)
+            timestamp_str = data.get('timestamp')
+            if timestamp_str:
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                except:
+                    timestamp = datetime.now()
+            else:
                 timestamp = datetime.now()
+<<<<<<< HEAD
         else:
             timestamp = datetime.now()
         # Save to persistent storage with full data
         global historical_data
         historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
+        # Also add to minute buffer for averaging
+        add_to_buffer('module1_crowd', {
+            'people_count': people_count,
+            'noise_db': data.get('data', {}).get('noise_db'),
+            'timestamp': timestamp.isoformat()
+        })
     
     socketio.emit('crowd_update', data)
     
@@ -1515,6 +1900,7 @@ def handle_crowd_video(data):
                     current_data['crowd'].update(data)
                 else:
                     current_data['crowd'] = data
+<<<<<<< HEAD
                 # Save to persistent storage
                 if 'data' in data and data['data']:
                     people_count = data.get('data', {}).get('people_count', 0)
@@ -1528,12 +1914,31 @@ def handle_crowd_video(data):
                         timestamp = datetime.now()
                     global historical_data
                     historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
+                
+                # Add to minute buffer if we have crowd data
+                if 'data' in data and data['data']:
+                    people_count = data['data'].get('people_count', 0)
+                    noise_db = data['data'].get('noise_db')
+                    timestamp = datetime.now()
+                    
+                    add_to_buffer('module1_crowd', {
+                        'people_count': people_count,
+                        'noise_db': noise_db,
+                        'timestamp': timestamp
+                    })
+                    
+                    if noise_db is not None:
+                        add_to_buffer('module1_audio', {
+                            'noise_db': noise_db,
+                            'timestamp': timestamp
+                        })
         else:
             # No AI analysis to preserve - update normally
             if current_data['crowd']:
                 current_data['crowd'].update(data)
             else:
                 current_data['crowd'] = data
+<<<<<<< HEAD
             # Save to persistent storage
             if 'data' in data and data['data']:
                 people_count = data.get('data', {}).get('people_count', 0)
@@ -1547,6 +1952,24 @@ def handle_crowd_video(data):
                     timestamp = datetime.now()
                 global historical_data
                 historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
+            
+            # Add to minute buffer if we have crowd data
+            if 'data' in data and data['data']:
+                people_count = data['data'].get('people_count', 0)
+                noise_db = data['data'].get('noise_db')
+                timestamp = datetime.now()
+                
+                add_to_buffer('module1_crowd', {
+                    'people_count': people_count,
+                    'noise_db': noise_db,
+                    'timestamp': timestamp
+                })
+                
+                if noise_db is not None:
+                    add_to_buffer('module1_audio', {
+                        'noise_db': noise_db,
+                        'timestamp': timestamp
+                    })
     
     # Emit with video_frame at top level for frontend
     socketio.emit('crowd_video_update', video_frame_data)
@@ -1576,6 +1999,7 @@ def handle_environment_data(data):
     print(f"[{datetime.now()}] Received Environment Data: {data}")
     current_data['environment'] = data
     
+<<<<<<< HEAD
     # Update module status
     module_id = data.get('module_id', 'unknown')
     update_module_status('environment', module_id, is_online=True)
@@ -1593,6 +2017,19 @@ def handle_environment_data(data):
     # Extract environment data for storage
     env_data_to_store = data.get('data', {}) if 'data' in data else data
     add_environment_entry(env_data_to_store, timestamp)
+    
+    # Add to minute buffer for averaging
+    if 'data' in data:
+        env_data = data['data']
+        add_to_buffer('module2_env', {
+            'temperature_c': env_data.get('temperature_c'),
+            'humidity_percent': env_data.get('humidity_percent'),
+            'pressure_hpa': env_data.get('pressure_hpa'),
+            'uv_index': env_data.get('uv_index'),
+            'voc_level': env_data.get('voc_level'),
+            'comfort_score': env_data.get('comfort_score'),
+            'timestamp': datetime.now()
+        })
     
     socketio.emit('environment_update', data)
     
@@ -1708,6 +2145,22 @@ def handle_feedback_data(data):
             module3_state['last_rating_timestamp'] = datetime.now().isoformat()
             save_module3_state()  # Persist state change
             print(f"[{datetime.now()}] Module 3: Latest rating updated to {rating}/5")
+            
+            # Save feedback immediately to database (not averaged)
+            timestamp_str = datetime.now().isoformat()
+            if USE_DATABASE:
+                try:
+                    conn = sqlite3.connect(HISTORY_DB)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO module3_feedback (timestamp, rating, report_type)
+                        VALUES (?, ?, ?)
+                    ''', (timestamp_str, rating, 'rating'))
+                    conn.commit()
+                    conn.close()
+                    print(f"[INFO] Saved Module 3 feedback to database: rating={rating}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to save Module 3 feedback: {e}")
     
     # Calculate average rating from all feedback entries
     ratings = []
@@ -2402,12 +2855,60 @@ def test_disconnect():
             'count': len(connected_modules['display'])
         })
         print(f"[{datetime.now()}] Module 5 display disconnected: {module_id}")
+<<<<<<< HEAD
     else:
         # Try to find and mark other module types as offline
         # Note: We need to track socket_id to module_id mapping for non-display modules
         # For now, we'll mark modules as offline based on connection history
         # In a production system, you'd maintain a socket_id -> module_id mapping
         pass
+    
+    # Check if this was a feedback module (Module 3)
+    if socket_id in feedback_module_sockets:
+        module_id = feedback_module_sockets[socket_id]
+        # Remove from connected modules
+        if module_id in connected_modules['feedback']:
+            connected_modules['feedback'].remove(module_id)
+        # Remove from socket tracking
+        del feedback_module_sockets[socket_id]
+        
+        # Set kiosk to idle but preserve all data
+        module3_state['kiosk_active'] = False
+        
+        # Calculate time since last rating interaction (preserve data)
+        time_since_last_rating = None
+        if module3_state['last_rating_timestamp']:
+            try:
+                last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
+                now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+                time_diff = (now - last_rating_dt).total_seconds()
+                
+                # Format time difference
+                if time_diff < 60:
+                    time_since_last_rating = f"{int(time_diff)}s ago"
+                elif time_diff < 3600:
+                    time_since_last_rating = f"{int(time_diff // 60)}m ago"
+                elif time_diff < 86400:
+                    time_since_last_rating = f"{int(time_diff // 3600)}h ago"
+                else:
+                    time_since_last_rating = f"{int(time_diff // 86400)}d ago"
+            except Exception as e:
+                print(f"[WARNING] Error calculating time since last rating: {e}")
+        
+        # Emit status update to set kiosk to idle, but keep all data
+        socketio.emit('feedback_status_update', {
+            'module_id': module_id,
+            'status': 'idle',
+            'is_active': False,
+            'distance_cm': None,
+            'screen_on': False,
+            'timestamp': datetime.now().isoformat(),
+            'last_rating_timestamp': module3_state['last_rating_timestamp'],
+            'latest_rating': module3_state['latest_rating'],
+            'time_since_last_rating': time_since_last_rating
+        })
+        print(f"[{datetime.now()}] Module 3 (feedback) disconnected: {module_id} - Status set to idle")
+>>>>>>> 5cbae18 (Add history system implementation)
 
 if __name__ == '__main__':
     import socket

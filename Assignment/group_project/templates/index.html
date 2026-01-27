@@ -1720,6 +1720,14 @@
         state.health.m3.lastSeen = Date.now();
         state.health.m3.mode = "active";
         log(`Module 3 (${id}) connected and active`);
+      } else if(t === 'display') {
+        // Module 5 display connected
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = id || "connected";
+        log(`Module 5 (${id}) connected and active`);
       }
       
       log(`Module connected (${t || "unknown"}: ${id || "unknown"})`);
@@ -1745,6 +1753,69 @@
         updateModule5Preview(data);
       } else {
         console.warn("DisplayUpdate received but data is null/undefined");
+      }
+    });
+    
+    // Module 5 display connection events
+    socket.on("module5_display_status", (data) => {
+      console.log("Module 5 display status:", data);
+      const connected = data.connected || false;
+      const count = data.count || 0;
+      const modules = data.modules || [];
+      
+      if(connected && count > 0) {
+        state.health.m5.lastSeen = Date.now();
+        state.health.m5.mode = "active";
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        // Show first module ID or count if multiple
+        if(modules.length > 0) {
+          document.getElementById("dbg-m5").textContent = modules[0] + (count > 1 ? ` (+${count-1})` : "");
+        } else {
+          document.getElementById("dbg-m5").textContent = `${count} connected`;
+        }
+        log(`Module 5 display status: ${count} connected`);
+      } else {
+        state.health.m5.mode = "idle";
+        state.health.m5.lastSeen = 0;
+        document.getElementById("kpi-m5").textContent = "Waiting";
+        setDot("dot-m5", "offline");
+        document.getElementById("dbg-m5").textContent = "—";
+        log("Module 5 display status: none connected");
+      }
+    });
+    
+    socket.on("module5_display_connected", (data) => {
+      console.log("Module 5 display connected:", data);
+      const moduleId = data.module_id || "unknown";
+      const count = data.count || 0;
+      state.health.m5.lastSeen = Date.now();
+      state.health.m5.mode = "active";
+      document.getElementById("kpi-m5").textContent = "Active";
+      setDot("dot-m5", "online");
+      document.getElementById("dbg-m5").textContent = moduleId;
+      log(`Module 5 display connected: ${moduleId} (${count} total)`);
+    });
+    
+    socket.on("module5_display_disconnected", (data) => {
+      console.log("Module 5 display disconnected:", data);
+      const count = data.count || 0;
+      if(count === 0) {
+        // No Module 5 displays connected anymore
+        state.health.m5.mode = "idle";
+        state.health.m5.lastSeen = 0;
+        document.getElementById("kpi-m5").textContent = "Waiting";
+        setDot("dot-m5", "offline");
+        document.getElementById("dbg-m5").textContent = "—";
+        log("Module 5 display disconnected (none connected)");
+      } else {
+        // Still have other Module 5 displays connected
+        // Update status to show remaining count
+        state.health.m5.lastSeen = Date.now();
+        document.getElementById("kpi-m5").textContent = "Active";
+        setDot("dot-m5", "online");
+        document.getElementById("dbg-m5").textContent = `${count} connected`;
+        log(`Module 5 display disconnected (${count} still connected)`);
       }
     });
     socket.on("crowd_update", (data) => {
