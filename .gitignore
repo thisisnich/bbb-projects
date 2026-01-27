@@ -6,3 +6,5 @@
 MyFirstPythonProject/keys/
 .env
 venv/
+history.json
+history.db
