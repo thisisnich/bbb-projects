@@ -21,7 +21,7 @@ COURT_ID = 'basketball_a'
 MODULE_ID = 'court_display_5_a'
 OLED_WIDTH = 128  # Actual OLED display is 128x64
 OLED_HEIGHT = 64
-TEXT_Y_OFFSET = 8  # Vertical offset to prevent text from being cut off at top
+TEXT_Y_OFFSET = -2  # Vertical offset to prevent text from being cut off at top (moved up 10 pixels)
 AUTO_ROTATION_IDLE_SECONDS = 60  # Auto-rotate after 60 seconds idle
 
 # ========== GLOBAL VARIABLES ==========
