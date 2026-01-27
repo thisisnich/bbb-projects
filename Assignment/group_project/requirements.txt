@@ -2,9 +2,14 @@ flask
 flask-socketio
 eventlet
 python-socketio
-Adafruit-BBIO
-adafruit-circuitpython-ssd1306
 Pillow
 anthropic
+opencv-python
+numpy
+
+# Note: Adafruit-BBIO and adafruit-circuitpython-ssd1306 are only needed on BeagleBone hardware
+# They are not required for the server. Install them separately on the BeagleBone devices if needed.
+# Adafruit-BBIO
+# adafruit-circuitpython-ssd1306
 
 

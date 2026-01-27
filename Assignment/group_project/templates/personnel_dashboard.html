@@ -790,7 +790,7 @@
           </div>
         </div>
         <div id="m3-stats" style="margin-bottom: 15px; display: none;">
-          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle); position: relative; z-index: 1;">
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
               <div>
                 <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
@@ -809,7 +809,7 @@
                 <div id="m3-last-interaction" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
               </div>
             </div>
-            <div id="m3-chart" style="margin-top: 15px;">
+            <div id="m3-chart" style="margin-top: 15px; max-height: 300px; overflow-y: auto; overflow-x: hidden; position: relative; z-index: 1;">
               <!-- Rating distribution chart will be rendered here -->
             </div>
           </div>
@@ -864,41 +864,40 @@
     <div class="card charts">
       <div class="cardHeader">
         <div>
-          <p class="title">Historical Patterns</p>
-          <p class="subtitle">From the Module 5 payload</p>
+          <p class="title">Historical Data</p>
+          <p class="subtitle">From crowd.db, env.db & rating.db • Auto-refreshes every 30s</p>
         </div>
         <span class="badge muted">Chart.js</span>
       </div>
-      <div class="chartsGrid">
+      <div class="chartsGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
         <div class="chartBox">
-          <div class="chartTitle">Today (hourly)</div>
+          <div class="chartTitle">Crowd - Last 12 Hours (all entries)</div>
           <div class="chartStage">
-            <canvas id="chart-hourly" class="chartCanvas"></canvas>
+            <canvas id="chart-crowd-hourly"></canvas>
           </div>
         </div>
         <div class="chartBox">
-          <div class="chartTitle">Week (same time)</div>
+          <div class="chartTitle">Crowd - Week (daily avg)</div>
           <div class="chartStage">
-            <canvas id="chart-weekly" class="chartCanvas"></canvas>
+            <canvas id="chart-crowd-weekly"></canvas>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Ratings Pie Chart -->
-    <div class="card charts">
-      <div class="cardHeader">
-        <div>
-          <p class="title">Feedback Ratings Distribution</p>
-          <p class="subtitle">User rating breakdown</p>
-        </div>
-        <span class="badge muted">Chart.js</span>
-      </div>
-      <div class="chartsGrid" style="grid-template-columns: 1fr; max-width: 500px; margin: 0 auto;">
         <div class="chartBox">
-          <div class="chartTitle">Rating Distribution</div>
+          <div class="chartTitle">Environment - Last 24h</div>
           <div class="chartStage">
-            <canvas id="chart-ratings" class="chartCanvas"></canvas>
+            <canvas id="chart-env-recent"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Environment - Week (daily avg)</div>
+          <div class="chartStage">
+            <canvas id="chart-env-weekly"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Ratings - Distribution</div>
+          <div class="chartStage">
+            <canvas id="chart-rating-dist"></canvas>
           </div>
         </div>
       </div>
@@ -927,7 +926,13 @@
       mockInterval: 30,
       pollInterval: null,
       lastDataHash: null,
-      charts: { hourly: null, weekly: null, ratings: null },
+      charts: { 
+        crowdHourly: null, 
+        crowdWeekly: null, 
+        envRecent: null, 
+        envWeekly: null,
+        ratingDist: null
+      },
       ratingDistribution: null,  // Store latest rating distribution data
       module3: {
         lastRatingTimestamp: null,  // ISO timestamp string
@@ -1026,7 +1031,6 @@
         }
         // Check if this is a disconnect signal
         if(data.disconnected) {
-          console.log("Module 5 disconnect signal received");
           // Clear Module 5 preview
           document.getElementById("kpi-m5").textContent = "Waiting";
           setDot("dot-m5", "offline");
@@ -1077,11 +1081,8 @@
         
         // If incoming data is all zeros/empty and we have existing valid data, preserve existing data
         if(incomingPeopleCount === 0 && incomingOccupancy === 0 && existingPeopleCount > 0 && !data.disconnected) {
-          console.log("Ignoring empty Module 5 update (preserving existing data with", existingPeopleCount, "people)");
           return; // Don't update with empty data
         }
-        
-        console.log("Updating Module 5 preview with data:", data);
         state.latestModule5 = data;
         bumpMsg();
 
@@ -1417,7 +1418,7 @@
       // Get max count for scaling
       const maxCount = Math.max(...Object.values(distribution));
       
-      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px;">Rating Distribution</div>';
+      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px; position: relative; z-index: 1;">Rating Distribution</div>';
       
       // Create bars for ratings 1-6
       for(let rating = 1; rating <= 6; rating++) {
@@ -1426,14 +1427,14 @@
         const barWidth = maxCount > 0 ? (count / maxCount * 100) : 0;
         
         chartHTML += `
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 30px; font-weight: 600; color: var(--text);">${rating}</div>
-            <div style="flex: 1; margin: 0 10px;">
+          <div style="display: flex; align-items: center; margin-bottom: 8px; position: relative; z-index: 1;">
+            <div style="width: 30px; font-weight: 600; color: var(--text); flex-shrink: 0;">${rating}</div>
+            <div style="flex: 1; margin: 0 10px; min-width: 0;">
               <div style="background: var(--borderSubtle); height: 20px; border-radius: 4px; overflow: hidden;">
                 <div style="background: ${rating >= 4 ? '#10b981' : rating >= 3 ? '#f59e0b' : '#ef4444'}; height: 100%; width: ${barWidth}%; transition: width 0.3s;"></div>
               </div>
             </div>
-            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text);">
+            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text); flex-shrink: 0;">
               ${count} (${percentage.toFixed(0)}%)
             </div>
           </div>
@@ -1443,132 +1444,348 @@
       container.innerHTML = chartHTML;
     }
 
+    // === CHART DATA LOADING FROM DATABASES ===
+    
+    async function loadCrowdHourlyChart() {
+      try {
+        const response = await fetch('/api/charts/crowd?hours=12&limit=500');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No crowd data for hourly chart");
+          return;
+        }
+        
+        // Show every individual entry from the last 12 hours
+        const labels = result.data.map(entry => {
+          const d = new Date(entry.timestamp);
+          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        
+        const values = result.data.map(entry => {
+          const peopleCount = entry.people_count || 0;
+          return peopleCount; // Show actual count, not percentage
+        });
+        
+        if(state.charts.crowdHourly) {
+          state.charts.crowdHourly.data.labels = labels;
+          state.charts.crowdHourly.data.datasets[0].data = values;
+          state.charts.crowdHourly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading crowd hourly chart:", error);
+      }
+    }
+    
+    async function loadCrowdWeeklyChart() {
+      try {
+        const response = await fetch('/api/charts/crowd?hours=168&limit=2000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No crowd data for weekly chart");
+          return;
+        }
+        
+        // Group by day of week
+        const dayMap = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
+        result.data.forEach(entry => {
+          const dayOfWeek = new Date(entry.timestamp).getDay();
+          dayMap[dayOfWeek].push(entry.people_count || 0);
+        });
+        
+        // Calculate averages for Mon-Sun
+        const values = [1,2,3,4,5,6,0].map(day => {
+          const counts = dayMap[day];
+          if(counts.length === 0) return 0;
+          const avg = counts.reduce((a,b) => a+b, 0) / counts.length;
+          return Math.round(Math.min(100, (avg / 10) * 100));
+        });
+        
+        if(state.charts.crowdWeekly) {
+          state.charts.crowdWeekly.data.datasets[0].data = values;
+          state.charts.crowdWeekly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading crowd weekly chart:", error);
+      }
+    }
+    
+    async function loadEnvRecentChart() {
+      try {
+        const response = await fetch('/api/charts/environment?hours=24&limit=1000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No environment data for recent chart");
+          return;
+        }
+        
+        const labels = result.data.map(e => {
+          const d = new Date(e.timestamp);
+          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        
+        if(state.charts.envRecent) {
+          state.charts.envRecent.data.labels = labels;
+          state.charts.envRecent.data.datasets[0].data = result.data.map(e => e.temperature_c);
+          state.charts.envRecent.data.datasets[1].data = result.data.map(e => e.humidity_percent);
+          state.charts.envRecent.data.datasets[2].data = result.data.map(e => e.uv_index);
+          state.charts.envRecent.data.datasets[3].data = result.data.map(e => e.comfort_score);
+          state.charts.envRecent.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading environment recent chart:", error);
+      }
+    }
+    
+    async function loadEnvWeeklyChart() {
+      try {
+        const response = await fetch('/api/charts/environment?hours=168&limit=2000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No environment data for weekly chart");
+          return;
+        }
+        
+        // Group by day
+        const dayMap = {};
+        result.data.forEach(entry => {
+          const d = new Date(entry.timestamp);
+          const key = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+          if(!dayMap[key]) {
+            dayMap[key] = {temp: [], humidity: [], uv: [], comfort: []};
+          }
+          if(entry.temperature_c != null) dayMap[key].temp.push(entry.temperature_c);
+          if(entry.humidity_percent != null) dayMap[key].humidity.push(entry.humidity_percent);
+          if(entry.uv_index != null) dayMap[key].uv.push(entry.uv_index);
+          if(entry.comfort_score != null) dayMap[key].comfort.push(entry.comfort_score);
+        });
+        
+        const labels = Object.keys(dayMap);
+        const avg = (arr) => arr.length > 0 ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
+        
+        if(state.charts.envWeekly) {
+          state.charts.envWeekly.data.labels = labels;
+          state.charts.envWeekly.data.datasets[0].data = labels.map(k => avg(dayMap[k].temp));
+          state.charts.envWeekly.data.datasets[1].data = labels.map(k => avg(dayMap[k].humidity));
+          state.charts.envWeekly.data.datasets[2].data = labels.map(k => avg(dayMap[k].uv));
+          state.charts.envWeekly.data.datasets[3].data = labels.map(k => avg(dayMap[k].comfort));
+          state.charts.envWeekly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading environment weekly chart:", error);
+      }
+    }
+    
+    async function loadRatingDistChart() {
+      try {
+        const response = await fetch('/api/charts/rating?days=365&limit=10000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No rating data for chart");
+          return;
+        }
+        
+        // Calculate distribution
+        const ratingDistribution = {};
+        for(let i = 1; i <= 6; i++) {
+          ratingDistribution[i] = 0;
+        }
+        result.data.forEach(entry => {
+          const rating = entry.rating;
+          if(rating >= 1 && rating <= 6) {
+            ratingDistribution[rating]++;
+          }
+        });
+        
+        const labels = Object.keys(ratingDistribution);
+        const values = Object.values(ratingDistribution);
+        
+        if(state.charts.ratingDist) {
+          state.charts.ratingDist.data.labels = labels.map(r => `${r} Stars`);
+          state.charts.ratingDist.data.datasets[0].data = values;
+          state.charts.ratingDist.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading rating distribution chart:", error);
+      }
+    }
+    
+    async function loadAllCharts() {
+      console.log("=== LOADING ALL CHARTS FROM DATABASES ===");
+      await Promise.all([
+        loadCrowdHourlyChart(),
+        loadCrowdWeeklyChart(),
+        loadEnvRecentChart(),
+        loadEnvWeeklyChart(),
+        loadRatingDistChart()
+      ]);
+      console.log("=== ALL CHARTS LOADED ===");
+    }
+
     // Chart.js: create once, update data only. Fixed-size parent prevents infinite resize loops.
     function initCharts(){
-      const hourly = document.getElementById("chart-hourly");
-      const weekly = document.getElementById("chart-weekly");
-      const ratings = document.getElementById("chart-ratings");
+      console.log("=== INITIALIZING CHARTS ===");
+      
+      const crowdHourly = document.getElementById("chart-crowd-hourly");
+      const crowdWeekly = document.getElementById("chart-crowd-weekly");
+      const envRecent = document.getElementById("chart-env-recent");
+      const envWeekly = document.getElementById("chart-env-weekly");
+      const ratingDist = document.getElementById("chart-rating-dist");
 
-      const common = {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: true } },
-        scales: {
-          y: { beginAtZero: true, max: 100, ticks: { callback: (v)=> `${v}%` } }
-        }
-      };
-
-      state.charts.hourly = new Chart(hourly, {
-        type: "line",
-        data: { labels: [], datasets: [{ data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), backgroundColor: "rgba(37,99,235,0.12)", fill: true, tension: 0.35 }] },
-        options: common
-      });
-
-      state.charts.weekly = new Chart(weekly, {
-        type: "bar",
-        data: { labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], datasets: [{ data: [], backgroundColor: "rgba(37,99,235,0.75)" }] },
-        options: common
-      });
-
-      // Ratings pie chart
-      const ratingColors = {
-        1: '#ef4444',  // Red
-        2: '#f97316',  // Orange
-        3: '#f59e0b',  // Amber
-        4: '#10b981',  // Green
-        5: '#16a34a',  // Dark green
-        6: '#059669'   // Emerald
-      };
-
-      state.charts.ratings = new Chart(ratings, {
-        type: "pie",
-        data: {
-          labels: [],
-          datasets: [{
-            data: [],
-            backgroundColor: [],
-            borderColor: '#ffffff',
-            borderWidth: 2
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          plugins: {
-            legend: {
-              display: true,
-              position: 'right',
-              labels: {
-                padding: 15,
-                font: {
-                  size: 12,
-                  weight: '600'
-                },
-                generateLabels: function(chart) {
-                  const data = chart.data;
-                  if (data.labels.length && data.datasets.length) {
-                    return data.labels.map((label, i) => {
-                      const value = data.datasets[0].data[i];
-                      const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
-                      const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                      return {
-                        text: `${label} Star${label !== '1' ? 's' : ''} (${percentage}%)`,
-                        fillStyle: data.datasets[0].backgroundColor[i],
-                        strokeStyle: data.datasets[0].borderColor,
-                        lineWidth: data.datasets[0].borderWidth,
-                        hidden: false,
-                        index: i
-                      };
-                    });
-                  }
-                  return [];
+      if(crowdHourly) {
+        state.charts.crowdHourly = new Chart(crowdHourly, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [{
+              label: "People Count",
+              data: [],
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37,99,235,0.1)",
+              fill: true,
+              tension: 0.3,
+              pointRadius: 3,
+              pointHoverRadius: 5
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `People: ${ctx.parsed.y}`
                 }
               }
             },
-            tooltip: {
-              enabled: true,
-              callbacks: {
-                label: function(context) {
-                  const label = context.label || '';
-                  const value = context.parsed || 0;
-                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                  return `${label}: ${value} (${percentage}%)`;
+            scales: { 
+              y: { 
+                beginAtZero: true,
+                title: { display: true, text: "People Count" },
+                ticks: { stepSize: 1 }
+              },
+              x: {
+                ticks: {
+                  maxRotation: 45,
+                  minRotation: 45,
+                  maxTicksLimit: 20
                 }
               }
             }
           }
-        }
-      });
+        });
+      }
+
+      if(crowdWeekly) {
+        state.charts.crowdWeekly = new Chart(crowdWeekly, {
+          type: "bar",
+          data: {
+            labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+            datasets: [{
+              label: "Avg Occupancy",
+              data: [],
+              backgroundColor: "rgba(37,99,235,0.7)"
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, max: 100 } }
+          }
+        });
+      }
+
+      if(envRecent) {
+        state.charts.envRecent = new Chart(envRecent, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
+              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
+              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
+              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+              legend: { 
+                display: true, 
+                position: "top", 
+                labels: { font: { size: 10 }, boxWidth: 8, padding: 8 } 
+              } 
+            },
+            scales: { y: { beginAtZero: true } }
+          }
+        });
+      }
+
+      if(envWeekly) {
+        state.charts.envWeekly = new Chart(envWeekly, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
+              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
+              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
+              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+              legend: { 
+                display: true, 
+                position: "top", 
+                labels: { font: { size: 10 }, boxWidth: 8, padding: 8 } 
+              } 
+            },
+            scales: { y: { beginAtZero: true } }
+          }
+        });
+      }
+
+      if(ratingDist) {
+        state.charts.ratingDist = new Chart(ratingDist, {
+          type: "pie",
+          data: {
+            labels: [],
+            datasets: [{
+              data: [],
+              backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#16a34a', '#059669']
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+              legend: { 
+                display: true, 
+                position: 'right', 
+                labels: { font: { size: 11 } } 
+              } 
+            }
+          }
+        });
+      }
+      
+      console.log("=== CHARTS INITIALIZED SUCCESSFULLY ===");
     }
 
     function updateChartsFromModule5(data){
-      const patterns = data && data.patterns ? data.patterns : null;
-      if(!patterns || !state.charts.hourly || !state.charts.weekly) return;
+      // Charts now load from databases - trigger refresh
+      loadAllCharts();
 
-      if(Array.isArray(patterns.today_hourly)){
-        const labels = patterns.today_hourly.map(h => {
-          const hr = Number(h.hour);
-          const hour = (hr % 12) || 12;
-          const ampm = hr >= 12 ? "PM" : "AM";
-          return `${hour}${ampm}`;
-        });
-        const vals = patterns.today_hourly.map(h => Math.round(Number(h.occupancy || 0) * 100));
-        state.charts.hourly.data.labels = labels;
-        state.charts.hourly.data.datasets[0].data = vals;
-        state.charts.hourly.update("none");
-      }
-      if(Array.isArray(patterns.week_same_time)){
-        // Map occupancy values, using null for days without data (graph will skip these)
-        const vals = patterns.week_same_time.map(d => {
-          if(d.occupancy === null || d.occupancy === undefined) return null;
-          return Math.round(Number(d.occupancy) * 100);
-        });
-        state.charts.weekly.data.datasets[0].data = vals;
-        state.charts.weekly.update("none");
-      }
     }
 
     function updateRatingsPieChart(distribution){
@@ -1719,7 +1936,6 @@
       socket.emit("send_mock_data_once", { scenario: state.mockScenario }, (response) => {
         if(response && response.status === 'success'){
           log(`✓ Mock data sent: ${response.message}`);
-          console.log("Mock data send response:", response);
         } else {
           log("✗ Failed to send mock data");
           console.error("Mock data send failed:", response);
@@ -1750,7 +1966,6 @@
           // Only update if data has changed
           if(dataHash !== state.lastDataHash) {
             state.lastDataHash = dataHash;
-            console.log("Data changed, updating UI...");
             
             // Update UI with new data
             if(data.crowd) {
@@ -1764,15 +1979,11 @@
             }
             // Always try to update Module 5 if data exists
             if(data.module5) {
-              console.log("Updating Module 5 preview from polling:", data.module5);
               try {
                 updateModule5Preview(data.module5);
-                console.log("✓ Module 5 preview updated successfully");
               } catch(error) {
                 console.error("Error updating Module 5 preview:", error);
               }
-            } else {
-              console.log("No Module 5 data available (need crowd or environment data)");
             }
           }
         } catch(error) {
@@ -1886,7 +2097,6 @@
     });
 
     socket.on("DisplayUpdate", (data) => {
-      console.log("DisplayUpdate event received:", data);
       log("Module 5 display update received");
       if(data){
         updateModule5Preview(data);
@@ -1897,7 +2107,6 @@
     
     // Module 5 display connection events
     socket.on("module5_display_status", (data) => {
-      console.log("Module 5 display status:", data);
       const connected = data.connected || false;
       const count = data.count || 0;
       const modules = data.modules || [];
@@ -1925,7 +2134,6 @@
     });
     
     socket.on("module5_display_connected", (data) => {
-      console.log("Module 5 display connected:", data);
       const moduleId = data.module_id || "unknown";
       const count = data.count || 0;
       state.health.m5.lastSeen = Date.now();
@@ -1937,7 +2145,6 @@
     });
     
     socket.on("module5_display_disconnected", (data) => {
-      console.log("Module 5 display disconnected:", data);
       const count = data.count || 0;
       if(count === 0) {
         // No Module 5 displays connected anymore
@@ -1958,7 +2165,6 @@
       }
     });
     socket.on("crowd_update", (data) => {
-      console.log("Crowd update event received:", data);
       log("Crowd update received");
       if(data) {
         // Check if this is a clear signal
@@ -1974,7 +2180,6 @@
         }
         try {
           renderCrowd(data);
-          console.log("✓ Crowd data rendered successfully");
         } catch(error) {
           console.error("Error rendering crowd data:", error);
           log(`Error rendering crowd: ${error.message}`);
@@ -1985,7 +2190,6 @@
     });
     
     socket.on("crowd_video_update", (data) => {
-      console.log("Crowd video update event received:", data);
       log("Video frame received from " + (data.module_id || "unknown"));
       
       // Update module status when video frames are received
@@ -2007,7 +2211,6 @@
             // Set image source from base64 data
             imageElement.src = "data:image/jpeg;base64," + data.video_frame;
             imageContainer.style.display = "block";
-            console.log("✓ Video frame image displayed");
             
             // Enable analyze button when video frame is available
             const analyzeBtn = document.getElementById("ai-analyze-btn");
@@ -2034,7 +2237,6 @@
       }
     });
     socket.on("environment_update", (data) => {
-      console.log("Environment update event received:", data);
       log("Environment update received");
       if(data) {
         // Check if this is a clear signal
@@ -2049,7 +2251,6 @@
         }
         try {
           renderEnvironment(data);
-          console.log("✓ Environment data rendered successfully");
         } catch(error) {
           console.error("Error rendering environment data:", error);
           log(`Error rendering environment: ${error.message}`);
@@ -2059,12 +2260,10 @@
       }
     });
     socket.on("feedback_update", (data) => {
-      console.log("Feedback update event received:", data);
       log("Feedback update received");
       if(data) {
         try {
           renderFeedback(data);
-          console.log("✓ Feedback data rendered successfully");
         } catch(error) {
           console.error("Error rendering feedback data:", error);
           log(`Error rendering feedback: ${error.message}`);
@@ -2075,7 +2274,6 @@
     });
     
     socket.on("feedback_status_update", (data) => {
-      console.log("Feedback status update received:", data);
       const isActive = data.is_active || false;
       const statusElement = document.getElementById("m3-kiosk-status");
       const indicatorElement = document.getElementById("m3-kiosk-indicator");
@@ -2294,7 +2492,6 @@
     }
     
     socket.on("ai_analysis_result", (data) => {
-      console.log("AI analysis result received:", data);
       if(data.result || data.people_count !== undefined) {
         const result = data.result || data;
         log(`AI Analysis complete: ${result.count || data.people_count || 0} people detected (broadcast from another dashboard)`);
@@ -2315,8 +2512,17 @@
 
     // Boot
     $(document).ready(function(){
+      console.log("=== PERSONNEL DASHBOARD READY ===");
       wireUi();
-      initCharts();
+      
+      // Initialize charts and load data
+      try {
+        initCharts();
+        loadAllCharts(); // Load data immediately after init
+        setInterval(loadAllCharts, 30000); // Refresh every 30s
+      } catch(error) {
+        console.error("Error with charts:", error);
+      }
       setDot("dot-m5", "offline");
       document.getElementById("dbg-m5").textContent = "—";
 
@@ -2325,8 +2531,7 @@
       updateKpis();
       log("Dashboard ready");
       
-      // Start polling for data updates every 2 seconds
-      startPolling();
+      // Real-time updates handled via Socket.IO events - no polling needed
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
       setModuleStatus("m1-status", "idle");

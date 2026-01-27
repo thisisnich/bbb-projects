@@ -783,7 +783,7 @@
           </div>
         </div>
         <div id="m3-stats" style="margin-bottom: 15px; display: none;">
-          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle); position: relative; z-index: 1;">
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
               <div>
                 <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
@@ -802,7 +802,7 @@
                 <div id="m3-last-interaction" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
               </div>
             </div>
-            <div id="m3-chart" style="margin-top: 15px;">
+            <div id="m3-chart" style="margin-top: 15px; max-height: 300px; overflow-y: auto; overflow-x: hidden; position: relative; z-index: 1;">
               <!-- Rating distribution chart will be rendered here -->
             </div>
           </div>
@@ -968,7 +968,6 @@
         }
         // Check if this is a disconnect signal
         if(data.disconnected) {
-          console.log("Module 5 disconnect signal received");
           // Clear Module 5 preview
           document.getElementById("kpi-m5").textContent = "Waiting";
           setDot("dot-m5", "offline");
@@ -1019,11 +1018,8 @@
         
         // If incoming data is all zeros/empty and we have existing valid data, preserve existing data
         if(incomingPeopleCount === 0 && incomingOccupancy === 0 && existingPeopleCount > 0 && !data.disconnected) {
-          console.log("Ignoring empty Module 5 update (preserving existing data with", existingPeopleCount, "people)");
           return; // Don't update with empty data
         }
-        
-        console.log("Updating Module 5 preview with data:", data);
         state.latestModule5 = data;
         bumpMsg();
 
@@ -1357,7 +1353,7 @@
       // Get max count for scaling
       const maxCount = Math.max(...Object.values(distribution));
       
-      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px;">Rating Distribution</div>';
+      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px; position: relative; z-index: 1;">Rating Distribution</div>';
       
       // Create bars for ratings 1-6
       for(let rating = 1; rating <= 6; rating++) {
@@ -1366,14 +1362,14 @@
         const barWidth = maxCount > 0 ? (count / maxCount * 100) : 0;
         
         chartHTML += `
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 30px; font-weight: 600; color: var(--text);">${rating}</div>
-            <div style="flex: 1; margin: 0 10px;">
+          <div style="display: flex; align-items: center; margin-bottom: 8px; position: relative; z-index: 1;">
+            <div style="width: 30px; font-weight: 600; color: var(--text); flex-shrink: 0;">${rating}</div>
+            <div style="flex: 1; margin: 0 10px; min-width: 0;">
               <div style="background: var(--borderSubtle); height: 20px; border-radius: 4px; overflow: hidden;">
                 <div style="background: ${rating >= 4 ? '#10b981' : rating >= 3 ? '#f59e0b' : '#ef4444'}; height: 100%; width: ${barWidth}%; transition: width 0.3s;"></div>
               </div>
             </div>
-            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text);">
+            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text); flex-shrink: 0;">
               ${count} (${percentage.toFixed(0)}%)
             </div>
           </div>
@@ -1630,7 +1626,6 @@
           // Only update if data has changed
           if(dataHash !== state.lastDataHash) {
             state.lastDataHash = dataHash;
-            console.log("Data changed, updating UI...");
             
             // Update UI with new data
             if(data.crowd) {
@@ -1644,15 +1639,11 @@
             }
             // Always try to update Module 5 if data exists
             if(data.module5) {
-              console.log("Updating Module 5 preview from polling:", data.module5);
               try {
                 updateModule5Preview(data.module5);
-                console.log("✓ Module 5 preview updated successfully");
               } catch(error) {
                 console.error("Error updating Module 5 preview:", error);
               }
-            } else {
-              console.log("No Module 5 data available (need crowd or environment data)");
             }
           }
         } catch(error) {
@@ -1745,7 +1736,6 @@
     });
 
     socket.on("DisplayUpdate", (data) => {
-      console.log("DisplayUpdate event received:", data);
       if(data){
         updateModule5Preview(data);
       } else {
@@ -1755,7 +1745,6 @@
     
     // Module 5 display connection events
     socket.on("module5_display_status", (data) => {
-      console.log("Module 5 display status:", data);
       const connected = data.connected || false;
       const count = data.count || 0;
       
@@ -1773,7 +1762,6 @@
     });
     
     socket.on("module5_display_connected", (data) => {
-      console.log("Module 5 display connected:", data);
       state.health.m5.lastSeen = Date.now();
       state.health.m5.mode = "active";
       document.getElementById("kpi-m5").textContent = "Active";
@@ -1781,7 +1769,6 @@
     });
     
     socket.on("module5_display_disconnected", (data) => {
-      console.log("Module 5 display disconnected:", data);
       const count = data.count || 0;
       if(count === 0) {
         state.health.m5.mode = "idle";
@@ -1795,7 +1782,6 @@
       }
     });
     socket.on("crowd_update", (data) => {
-      console.log("Crowd update event received:", data);
       if(data) {
         // Check if this is a clear signal
         if(data.cleared) {
@@ -1809,7 +1795,6 @@
         }
         try {
           renderCrowd(data);
-          console.log("✓ Crowd data rendered successfully");
         } catch(error) {
           console.error("Error rendering crowd data:", error);
         }
@@ -1818,7 +1803,6 @@
       }
     });
     socket.on("environment_update", (data) => {
-      console.log("Environment update event received:", data);
       if(data) {
         // Check if this is a clear signal
         if(data.cleared) {
@@ -1831,7 +1815,6 @@
         }
         try {
           renderEnvironment(data);
-          console.log("✓ Environment data rendered successfully");
         } catch(error) {
           console.error("Error rendering environment data:", error);
         }
@@ -1840,11 +1823,9 @@
       }
     });
     socket.on("feedback_update", (data) => {
-      console.log("Feedback update event received:", data);
       if(data) {
         try {
           renderFeedback(data);
-          console.log("✓ Feedback data rendered successfully");
         } catch(error) {
           console.error("Error rendering feedback data:", error);
         }
@@ -1854,7 +1835,6 @@
     });
     
     socket.on("feedback_status_update", (data) => {
-      console.log("Feedback status update received:", data);
       const isActive = data.is_active || false;
       const statusElement = document.getElementById("m3-kiosk-status");
       const indicatorElement = document.getElementById("m3-kiosk-indicator");
@@ -1917,8 +1897,7 @@
 
       updateKpis();
       
-      // Start polling for data updates every 2 seconds
-      startPolling();
+      // Real-time updates handled via Socket.IO events - no polling needed
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
       setModuleStatus("m1-status", "idle");

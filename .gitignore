@@ -8,3 +8,4 @@ MyFirstPythonProject/keys/
 venv/
 history.json
 history.db
+*.db

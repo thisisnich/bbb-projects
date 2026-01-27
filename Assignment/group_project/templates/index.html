@@ -557,7 +557,12 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--s16);
     }
-    @media (max-width: 900px){ .chartsGrid{ grid-template-columns: 1fr; } }
+    @media (max-width: 1200px){ 
+      .chartsGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); } 
+    }
+    @media (max-width: 900px){ 
+      .chartsGrid{ grid-template-columns: 1fr; } 
+    }
     .chartBox{
       border: 0.5px solid var(--borderSubtle);
       border-radius: var(--r8);
@@ -567,6 +572,8 @@
       display:flex;
       flex-direction:column;
       min-width:0;
+      position: relative;
+      overflow: hidden;
     }
     .chartTitle{
       font-size: 12px;
@@ -581,11 +588,19 @@
       position: relative;
       flex: 1 1 auto;
       min-height: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      box-sizing: border-box;
     }
     canvas.chartCanvas{
       width: 100% !important;
       height: 100% !important;
       display:block;
+      position: relative;
+      max-width: 100%;
+      max-height: 100%;
+      box-sizing: border-box;
     }
 
     /* Tiny motion */
@@ -787,7 +802,7 @@
           </div>
         </div>
         <div id="m3-stats" style="margin-bottom: 15px; display: none;">
-          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+          <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--borderSubtle); position: relative; z-index: 1;">
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
               <div>
                 <div style="font-size: 0.85em; color: var(--muted); margin-bottom: 5px;">Average Rating</div>
@@ -806,7 +821,7 @@
                 <div id="m3-last-interaction" style="font-size: 1.2em; font-weight: 600; color: var(--text);">—</div>
               </div>
             </div>
-            <div id="m3-chart" style="margin-top: 15px;">
+            <div id="m3-chart" style="margin-top: 15px; max-height: 300px; overflow-y: auto; overflow-x: hidden; position: relative; z-index: 1;">
               <!-- Rating distribution chart will be rendered here -->
             </div>
           </div>
@@ -861,22 +876,34 @@
     <div class="card charts">
       <div class="cardHeader">
         <div>
-          <p class="title">Historical Patterns</p>
-          <p class="subtitle">From the Module 5 payload</p>
+          <p class="title">Historical Data</p>
+          <p class="subtitle">From crowd.db & env.db • Auto-refreshes every 30s</p>
         </div>
         <span class="badge muted">Chart.js</span>
       </div>
       <div class="chartsGrid">
         <div class="chartBox">
-          <div class="chartTitle">Today (hourly)</div>
+          <div class="chartTitle">Crowd - Last 12 Hours (all entries)</div>
           <div class="chartStage">
-            <canvas id="chart-hourly" class="chartCanvas"></canvas>
+            <canvas id="chart-crowd-hourly"></canvas>
           </div>
         </div>
         <div class="chartBox">
-          <div class="chartTitle">Week (same time)</div>
+          <div class="chartTitle">Crowd - Week (daily avg)</div>
           <div class="chartStage">
-            <canvas id="chart-weekly" class="chartCanvas"></canvas>
+            <canvas id="chart-crowd-weekly"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Environment - Last 24h</div>
+          <div class="chartStage">
+            <canvas id="chart-env-recent"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Environment - Week (daily avg)</div>
+          <div class="chartStage">
+            <canvas id="chart-env-weekly"></canvas>
           </div>
         </div>
       </div>
@@ -900,7 +927,13 @@
       mockInterval: 30,
       pollInterval: null,
       lastDataHash: null,
-      charts: { hourly: null, weekly: null },
+      lastVideoFrameLog: null,  // Track last time we logged video frame reception (for throttling)
+      charts: { 
+        crowdHourly: null, 
+        crowdWeekly: null, 
+        envRecent: null, 
+        envWeekly: null 
+      },
       module3: {
         lastRatingTimestamp: null,  // ISO timestamp string
         latestRating: null
@@ -998,7 +1031,6 @@
         }
         // Check if this is a disconnect signal
         if(data.disconnected) {
-          console.log("Module 5 disconnect signal received");
           // Clear Module 5 preview
           document.getElementById("kpi-m5").textContent = "Waiting";
           setDot("dot-m5", "offline");
@@ -1049,11 +1081,8 @@
         
         // If incoming data is all zeros/empty and we have existing valid data, preserve existing data
         if(incomingPeopleCount === 0 && incomingOccupancy === 0 && existingPeopleCount > 0 && !data.disconnected) {
-          console.log("Ignoring empty Module 5 update (preserving existing data with", existingPeopleCount, "people)");
           return; // Don't update with empty data
         }
-        
-        console.log("Updating Module 5 preview with data:", data);
         state.latestModule5 = data;
         bumpMsg();
 
@@ -1129,8 +1158,7 @@
 
       // Inspector moved to /debug page
 
-      // charts
-      if(data.patterns) updateChartsFromModule5(data);
+      // Charts auto-refresh from database every 30s
       } catch(error) {
         console.error("Error updating Module 5 preview:", error, data);
         log(`Error updating Module 5 preview: ${error.message}`);
@@ -1242,6 +1270,8 @@
       }
     }
 
+    // Charts now load from database - removed in-memory environment history
+
     function renderEnvironment(data){
       if(!data) {
         console.warn("renderEnvironment called with no data");
@@ -1254,6 +1284,7 @@
       state.health.m2.source = src;
       state.health.m2.mode = (src && String(src).toLowerCase().includes("mock")) ? "mock" : "active";
       setModuleStatus("m2-status", state.health.m2.mode, state.health.m2.mode === "mock" ? "simulated" : "data");
+      
       const html = [
         metricTile("Temperature", d.temperature_c != null ? `${d.temperature_c}°C` : "—", true),
         metricTile("Humidity", d.humidity_percent != null ? `${d.humidity_percent}%` : "—", true),
@@ -1381,10 +1412,8 @@
         return;
       }
       
-      // Get max count for scaling
       const maxCount = Math.max(...Object.values(distribution));
-      
-      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px;">Rating Distribution</div>';
+      let chartHTML = '<div style="font-size: 0.85em; color: var(--muted); margin-bottom: 10px; position: relative; z-index: 1;">Rating Distribution</div>';
       
       // Create bars for ratings 1-6
       for(let rating = 1; rating <= 6; rating++) {
@@ -1393,14 +1422,14 @@
         const barWidth = maxCount > 0 ? (count / maxCount * 100) : 0;
         
         chartHTML += `
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 30px; font-weight: 600; color: var(--text);">${rating}</div>
-            <div style="flex: 1; margin: 0 10px;">
+          <div style="display: flex; align-items: center; margin-bottom: 8px; position: relative; z-index: 1;">
+            <div style="width: 30px; font-weight: 600; color: var(--text); flex-shrink: 0;">${rating}</div>
+            <div style="flex: 1; margin: 0 10px; min-width: 0;">
               <div style="background: var(--borderSubtle); height: 20px; border-radius: 4px; overflow: hidden;">
                 <div style="background: ${rating >= 4 ? '#10b981' : rating >= 3 ? '#f59e0b' : '#ef4444'}; height: 100%; width: ${barWidth}%; transition: width 0.3s;"></div>
               </div>
             </div>
-            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text);">
+            <div style="width: 60px; text-align: right; font-size: 0.85em; color: var(--text); flex-shrink: 0;">
               ${count} (${percentage.toFixed(0)}%)
             </div>
           </div>
@@ -1410,59 +1439,489 @@
       container.innerHTML = chartHTML;
     }
 
-    // Chart.js: create once, update data only. Fixed-size parent prevents infinite resize loops.
-    function initCharts(){
-      const hourly = document.getElementById("chart-hourly");
-      const weekly = document.getElementById("chart-weekly");
-
-      const common = {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: true } },
-        scales: {
-          y: { beginAtZero: true, max: 100, ticks: { callback: (v)=> `${v}%` } }
+    // === CHART DATA LOADING FROM DATABASES ===
+    
+    async function loadCrowdHourlyChart() {
+      try {
+        const response = await fetch('/api/charts/crowd?hours=12&limit=500');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No crowd data for hourly chart");
+          return;
         }
-      };
+        
+        // Show every individual entry from the last 12 hours
+        const labels = result.data.map(entry => {
+          const d = new Date(entry.timestamp);
+          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        
+        const values = result.data.map(entry => {
+          const peopleCount = entry.people_count || 0;
+          return peopleCount; // Show actual count, not percentage
+        });
+        
+        if(state.charts.crowdHourly) {
+          state.charts.crowdHourly.data.labels = labels;
+          state.charts.crowdHourly.data.datasets[0].data = values;
+          state.charts.crowdHourly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading crowd hourly chart:", error);
+      }
+    }
+    
+    async function loadCrowdWeeklyChart() {
+      try {
+        const response = await fetch('/api/charts/crowd?hours=168&limit=2000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No crowd data for weekly chart");
+          return;
+        }
+        
+        // Group by day of week
+        const dayMap = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
+        result.data.forEach(entry => {
+          const dayOfWeek = new Date(entry.timestamp).getDay();
+          dayMap[dayOfWeek].push(entry.people_count || 0);
+        });
+        
+        // Calculate averages for Mon-Sun
+        const values = [1,2,3,4,5,6,0].map(day => {
+          const counts = dayMap[day];
+          if(counts.length === 0) return 0;
+          const avg = counts.reduce((a,b) => a+b, 0) / counts.length;
+          return Math.round(Math.min(100, (avg / 10) * 100));
+        });
+        
+        if(state.charts.crowdWeekly) {
+          state.charts.crowdWeekly.data.datasets[0].data = values;
+          state.charts.crowdWeekly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading crowd weekly chart:", error);
+      }
+    }
+    
+    async function loadEnvRecentChart() {
+      try {
+        const response = await fetch('/api/charts/environment?hours=24&limit=1000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No environment data for recent chart");
+          return;
+        }
+        
+        const labels = result.data.map(e => {
+          const d = new Date(e.timestamp);
+          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        });
+        
+        if(state.charts.envRecent) {
+          state.charts.envRecent.data.labels = labels;
+          state.charts.envRecent.data.datasets[0].data = result.data.map(e => e.temperature_c);
+          state.charts.envRecent.data.datasets[1].data = result.data.map(e => e.humidity_percent);
+          state.charts.envRecent.data.datasets[2].data = result.data.map(e => e.uv_index);
+          state.charts.envRecent.data.datasets[3].data = result.data.map(e => e.comfort_score);
+          state.charts.envRecent.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading environment recent chart:", error);
+      }
+    }
+    
+    async function loadEnvWeeklyChart() {
+      try {
+        const response = await fetch('/api/charts/environment?hours=168&limit=2000');
+        const result = await response.json();
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("No environment data for weekly chart");
+          return;
+        }
+        
+        // Group by day
+        const dayMap = {};
+        result.data.forEach(entry => {
+          const d = new Date(entry.timestamp);
+          const key = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+          if(!dayMap[key]) {
+            dayMap[key] = {temp: [], humidity: [], uv: [], comfort: []};
+          }
+          if(entry.temperature_c != null) dayMap[key].temp.push(entry.temperature_c);
+          if(entry.humidity_percent != null) dayMap[key].humidity.push(entry.humidity_percent);
+          if(entry.uv_index != null) dayMap[key].uv.push(entry.uv_index);
+          if(entry.comfort_score != null) dayMap[key].comfort.push(entry.comfort_score);
+        });
+        
+        const labels = Object.keys(dayMap);
+        const avg = (arr) => arr.length > 0 ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
+        
+        if(state.charts.envWeekly) {
+          state.charts.envWeekly.data.labels = labels;
+          state.charts.envWeekly.data.datasets[0].data = labels.map(k => avg(dayMap[k].temp));
+          state.charts.envWeekly.data.datasets[1].data = labels.map(k => avg(dayMap[k].humidity));
+          state.charts.envWeekly.data.datasets[2].data = labels.map(k => avg(dayMap[k].uv));
+          state.charts.envWeekly.data.datasets[3].data = labels.map(k => avg(dayMap[k].comfort));
+          state.charts.envWeekly.update('none');
+        }
+      } catch(error) {
+        console.error("Error loading environment weekly chart:", error);
+      }
+    }
+    
+    async function loadRatingChart() {
+      try {
+        console.log("[Rating] Loading rating chart...");
+        const response = await fetch('/api/charts/rating?days=365&limit=10000');
+        
+        if(!response.ok) {
+          console.error("[Rating] API request failed:", response.status);
+          return;
+        }
+        
+        const result = await response.json();
+        console.log("[Rating] API response:", result);
+        
+        if(!result.data || result.data.length === 0) {
+          console.log("[Rating] No rating data in response");
+          return;
+        }
+        
+        console.log("[Rating] Processing", result.count, "entries");
+        
+        // Extract ratings
+        const ratings = result.data.map(r => r.rating).filter(r => r !== null && r !== undefined);
+        console.log("[Rating] Filtered ratings:", ratings);
+        
+        if(ratings.length === 0) {
+          console.log("[Rating] No valid ratings after filtering");
+          return;
+        }
+        
+        // Calculate statistics
+        const totalRatings = ratings.length;
+        const averageRating = ratings.reduce((a, b) => a + b, 0) / totalRatings;
+        const latestRating = ratings[0]; // First entry (newest)
+        
+        // Calculate distribution
+        const ratingDistribution = {};
+        for(let i = 1; i <= 6; i++) {
+          ratingDistribution[i] = ratings.filter(r => r === i).length;
+        }
+        
+        console.log("[Rating] Stats:", {
+          total: totalRatings,
+          average: averageRating.toFixed(2),
+          latest: latestRating,
+          distribution: ratingDistribution
+        });
+        
+        // Update UI elements
+        const avgElement = document.getElementById("m3-average");
+        const totalElement = document.getElementById("m3-total");
+        const latestRatingElement = document.getElementById("m3-latest-rating");
+        const lastInteractionElement = document.getElementById("m3-last-interaction");
+        const chartElement = document.getElementById("m3-chart");
+        
+        console.log("[Rating] UI elements found:", {
+          avg: !!avgElement,
+          total: !!totalElement,
+          latest: !!latestRatingElement,
+          lastInteraction: !!lastInteractionElement,
+          chart: !!chartElement
+        });
+        
+        if(avgElement) {
+          avgElement.textContent = averageRating.toFixed(2);
+          avgElement.style.color = averageRating >= 4 ? "#10b981" : averageRating >= 3 ? "#f59e0b" : "#ef4444";
+          console.log("[Rating] Updated average element");
+        }
+        
+        if(totalElement) {
+          totalElement.textContent = totalRatings;
+          console.log("[Rating] Updated total element");
+        }
+        
+        if(latestRatingElement) {
+          const stars = "★".repeat(Math.max(0, Number(latestRating)));
+          latestRatingElement.innerHTML = `${stars} <span style="font-size: 0.6em; color: var(--muted);">(${latestRating}/6)</span>`;
+          latestRatingElement.style.color = latestRating >= 4 ? "#10b981" : latestRating >= 3 ? "#f59e0b" : "#ef4444";
+          console.log("[Rating] Updated latest rating element");
+        }
+        
+        if(lastInteractionElement && result.data[0]) {
+          const lastTime = new Date(result.data[0].timestamp);
+          const timeDiff = (Date.now() - lastTime.getTime()) / 1000; // seconds
+          let timeText;
+          if(timeDiff < 60) timeText = `${Math.floor(timeDiff)}s ago`;
+          else if(timeDiff < 3600) timeText = `${Math.floor(timeDiff / 60)}m ago`;
+          else if(timeDiff < 86400) timeText = `${Math.floor(timeDiff / 3600)}h ago`;
+          else timeText = `${Math.floor(timeDiff / 86400)}d ago`;
+          lastInteractionElement.textContent = timeText;
+          console.log("[Rating] Updated last interaction:", timeText);
+        }
+        
+        // Render chart
+        if(chartElement) {
+          console.log("[Rating] Rendering chart...");
+          renderRatingChart(chartElement, ratingDistribution, totalRatings);
+          console.log("[Rating] Chart rendered");
+        } else {
+          console.warn("[Rating] Chart element not found!");
+        }
+        
+        console.log("[Rating] ✓ Rating chart loaded successfully");
+      } catch(error) {
+        console.error("[Rating] ✗ Error loading rating chart:", error);
+        console.error(error.stack);
+      }
+    }
+    
+    async function loadAllCharts() {
+      console.log("Loading all charts from databases...");
+      await Promise.all([
+        loadCrowdHourlyChart(),
+        loadCrowdWeeklyChart(),
+        loadEnvRecentChart(),
+        loadEnvWeeklyChart(),
+        loadRatingChart()
+      ]);
+      console.log("All charts loaded");
+    }
 
-      state.charts.hourly = new Chart(hourly, {
-        type: "line",
-        data: { labels: [], datasets: [{ data: [], borderColor: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), backgroundColor: "rgba(37,99,235,0.12)", fill: true, tension: 0.35 }] },
-        options: common
+    function initCharts(){
+      console.log("=== INITIALIZING CHARTS ===");
+      
+      // Check if Chart.js is loaded
+      if(typeof Chart === 'undefined') {
+        console.error("Chart.js is not loaded!");
+        return;
+      }
+      console.log("Chart.js version:", Chart.version);
+      
+      // Crowd - Hourly (Last 12 Hours)
+      const crowdHourly = document.getElementById("chart-crowd-hourly");
+      if(crowdHourly) {
+        state.charts.crowdHourly = new Chart(crowdHourly, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [{
+              label: "People Count",
+              data: [],
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37,99,235,0.1)",
+              fill: true,
+              tension: 0.3,
+              pointRadius: 3,
+              pointHoverRadius: 5
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { 
+                callbacks: {
+                  label: (ctx) => `People: ${ctx.parsed.y}`
+                }
+              }
+            },
+            scales: {
+              y: { 
+                beginAtZero: true,
+                title: { display: true, text: "People Count" },
+                ticks: { stepSize: 1 }
+              },
+              x: {
+                ticks: {
+                  maxRotation: 45,
+                  minRotation: 45,
+                  maxTicksLimit: 20
+                }
+              }
+            }
+          }
+        });
+      }
+      
+      // Crowd - Weekly
+      const crowdWeekly = document.getElementById("chart-crowd-weekly");
+      if(crowdWeekly) {
+        state.charts.crowdWeekly = new Chart(crowdWeekly, {
+          type: "bar",
+          data: {
+            labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+            datasets: [{
+              label: "Avg Occupancy",
+              data: [],
+              backgroundColor: "rgba(37,99,235,0.7)"
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { 
+                callbacks: {
+                  label: (ctx) => `Avg Occupancy: ${ctx.parsed.y}%`
+                }
+              }
+            },
+            scales: {
+              y: { 
+                beginAtZero: true, 
+                max: 100,
+                title: { display: true, text: "Occupancy %" }
+              }
+            }
+          }
+        });
+      }
+      
+      // Environment - Recent (24h)
+      const envRecent = document.getElementById("chart-env-recent");
+      if(envRecent) {
+        state.charts.envRecent = new Chart(envRecent, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: "Temp (°C)",
+                data: [],
+                borderColor: "#ef4444",
+                backgroundColor: "rgba(239,68,68,0.1)",
+                tension: 0.3
+              },
+              {
+                label: "Humidity (%)",
+                data: [],
+                borderColor: "#3b82f6",
+                backgroundColor: "rgba(59,130,246,0.1)",
+                tension: 0.3
+              },
+              {
+                label: "UV",
+                data: [],
+                borderColor: "#f59e0b",
+                backgroundColor: "rgba(245,158,11,0.1)",
+                tension: 0.3
+              },
+              {
+                label: "Comfort",
+                data: [],
+                borderColor: "#10b981",
+                backgroundColor: "rgba(16,185,129,0.1)",
+                tension: 0.3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                position: "top",
+                labels: {
+                  usePointStyle: true,
+                  font: { size: 10 },
+                  boxWidth: 8,
+                  padding: 8
+                }
+              }
+            },
+            scales: {
+              y: { beginAtZero: true }
+            }
+          }
+        });
+      }
+      
+      // Environment - Weekly
+      const envWeekly = document.getElementById("chart-env-weekly");
+      if(envWeekly) {
+        state.charts.envWeekly = new Chart(envWeekly, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: "Temp (°C)",
+                data: [],
+                borderColor: "#ef4444",
+                tension: 0.3
+              },
+              {
+                label: "Humidity (%)",
+                data: [],
+                borderColor: "#3b82f6",
+                tension: 0.3
+              },
+              {
+                label: "UV",
+                data: [],
+                borderColor: "#f59e0b",
+                tension: 0.3
+              },
+              {
+                label: "Comfort",
+                data: [],
+                borderColor: "#10b981",
+                tension: 0.3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                position: "top",
+                labels: {
+                  usePointStyle: true,
+                  font: { size: 10 },
+                  boxWidth: 8,
+                  padding: 8
+                }
+              }
+            },
+            scales: {
+              y: { beginAtZero: true }
+            }
+          }
+        });
+      }
+      
+      console.log("=== CHARTS INITIALIZED SUCCESSFULLY ===");
+      console.log("Chart objects created:", {
+        crowdHourly: !!state.charts.crowdHourly,
+        crowdWeekly: !!state.charts.crowdWeekly,
+        envRecent: !!state.charts.envRecent,
+        envWeekly: !!state.charts.envWeekly
       });
-
-      state.charts.weekly = new Chart(weekly, {
-        type: "bar",
-        data: { labels: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], datasets: [{ data: [], backgroundColor: "rgba(37,99,235,0.75)" }] },
-        options: common
-      });
+      
+      // Load initial data from databases
+      console.log("=== CALLING loadAllCharts() ===");
+      loadAllCharts();
+      
+      // Refresh every 30 seconds
+      console.log("=== SETTING UP 30s REFRESH INTERVAL ===");
+      setInterval(loadAllCharts, 30000);
     }
 
     function updateChartsFromModule5(data){
-      const patterns = data && data.patterns ? data.patterns : null;
-      if(!patterns || !state.charts.hourly || !state.charts.weekly) return;
-
-      if(Array.isArray(patterns.today_hourly)){
-        const labels = patterns.today_hourly.map(h => {
-          const hr = Number(h.hour);
-          const hour = (hr % 12) || 12;
-          const ampm = hr >= 12 ? "PM" : "AM";
-          return `${hour}${ampm}`;
-        });
-        const vals = patterns.today_hourly.map(h => Math.round(Number(h.occupancy || 0) * 100));
-        state.charts.hourly.data.labels = labels;
-        state.charts.hourly.data.datasets[0].data = vals;
-        state.charts.hourly.update("none");
-      }
-      if(Array.isArray(patterns.week_same_time)){
-        // Map occupancy values, using null for days without data (graph will skip these)
-        const vals = patterns.week_same_time.map(d => {
-          if(d.occupancy === null || d.occupancy === undefined) return null;
-          return Math.round(Number(d.occupancy) * 100);
-        });
-        state.charts.weekly.data.datasets[0].data = vals;
-        state.charts.weekly.update("none");
-      }
+      // Refresh charts when new data arrives
+      loadAllCharts();
     }
 
     // Custom select helper
@@ -1580,7 +2039,6 @@
       socket.emit("send_mock_data_once", { scenario: state.mockScenario }, (response) => {
         if(response && response.status === 'success'){
           log(`✓ Mock data sent: ${response.message}`);
-          console.log("Mock data send response:", response);
         } else {
           log("✗ Failed to send mock data");
           console.error("Mock data send failed:", response);
@@ -1595,7 +2053,6 @@
         try {
           const response = await fetch('/api/current_data');
           if(!response.ok) {
-            console.warn("Polling failed:", response.status);
             return;
           }
           const data = await response.json();
@@ -1611,7 +2068,6 @@
           // Only update if data has changed
           if(dataHash !== state.lastDataHash) {
             state.lastDataHash = dataHash;
-            console.log("Data changed, updating UI...");
             
             // Update UI with new data
             if(data.crowd) {
@@ -1625,15 +2081,11 @@
             }
             // Always try to update Module 5 if data exists
             if(data.module5) {
-              console.log("Updating Module 5 preview from polling:", data.module5);
               try {
                 updateModule5Preview(data.module5);
-                console.log("✓ Module 5 preview updated successfully");
               } catch(error) {
                 console.error("Error updating Module 5 preview:", error);
               }
-            } else {
-              console.log("No Module 5 data available (need crowd or environment data)");
             }
           }
         } catch(error) {
@@ -1694,6 +2146,7 @@
       if(snapshot && snapshot.feedback && snapshot.feedback.length){
         renderFeedback(snapshot.feedback[snapshot.feedback.length - 1]);
       }
+      // Rating chart loads via loadAllCharts()
     });
 
     socket.on("module_connected", (data) => {
@@ -1747,7 +2200,6 @@
     });
 
     socket.on("DisplayUpdate", (data) => {
-      console.log("DisplayUpdate event received:", data);
       log("Module 5 display update received");
       if(data){
         updateModule5Preview(data);
@@ -1758,7 +2210,6 @@
     
     // Module 5 display connection events
     socket.on("module5_display_status", (data) => {
-      console.log("Module 5 display status:", data);
       const connected = data.connected || false;
       const count = data.count || 0;
       const modules = data.modules || [];
@@ -1786,7 +2237,6 @@
     });
     
     socket.on("module5_display_connected", (data) => {
-      console.log("Module 5 display connected:", data);
       const moduleId = data.module_id || "unknown";
       const count = data.count || 0;
       state.health.m5.lastSeen = Date.now();
@@ -1798,7 +2248,6 @@
     });
     
     socket.on("module5_display_disconnected", (data) => {
-      console.log("Module 5 display disconnected:", data);
       const count = data.count || 0;
       if(count === 0) {
         // No Module 5 displays connected anymore
@@ -1819,7 +2268,6 @@
       }
     });
     socket.on("crowd_update", (data) => {
-      console.log("Crowd update event received:", data);
       log("Crowd update received");
       if(data) {
         // Check if this is a clear signal
@@ -1835,7 +2283,6 @@
         }
         try {
           renderCrowd(data);
-          console.log("✓ Crowd data rendered successfully");
         } catch(error) {
           console.error("Error rendering crowd data:", error);
           log(`Error rendering crowd: ${error.message}`);
@@ -1846,14 +2293,26 @@
     });
     
     socket.on("crowd_video_update", (data) => {
-      console.log("Crowd video update event received:", data);
-      log("Video frame received from " + (data.module_id || "unknown"));
+      const moduleId = data.module_id || "unknown";
+      const hasFrame = !!data.video_frame;
+      const frameSize = data.video_frame ? data.video_frame.length : 0;
       
       // Update module status when video frames are received
       if(data.module_id) {
         state.health.m1.lastSeen = Date.now();
         setModuleStatus("m1-status", "active");
-        log(`Module ${data.module_id} is active (sending video frames)`);
+        state.health.m1.mode = "active";
+        
+        // Throttle logging to avoid spam (log every 3 seconds max)
+        const now = Date.now();
+        if(!state.lastVideoFrameLog || (now - state.lastVideoFrameLog) > 3000) {
+          if(hasFrame) {
+            log(`Module 1 (${moduleId}): Frame received (${Math.round(frameSize/1024)}KB)`);
+          } else {
+            log(`Module 1 (${moduleId}): Update received (no frame)`);
+          }
+          state.lastVideoFrameLog = now;
+        }
       }
       
       // Display video frame image if available
@@ -1868,7 +2327,6 @@
             // Set image source from base64 data
             imageElement.src = "data:image/jpeg;base64," + data.video_frame;
             imageContainer.style.display = "block";
-            console.log("✓ Video frame image displayed");
             
             // Enable analyze button when video frame is available
             const analyzeBtn = document.getElementById("ai-analyze-btn");
@@ -1895,7 +2353,6 @@
       }
     });
     socket.on("environment_update", (data) => {
-      console.log("Environment update event received:", data);
       log("Environment update received");
       if(data) {
         // Check if this is a clear signal
@@ -1910,7 +2367,6 @@
         }
         try {
           renderEnvironment(data);
-          console.log("✓ Environment data rendered successfully");
         } catch(error) {
           console.error("Error rendering environment data:", error);
           log(`Error rendering environment: ${error.message}`);
@@ -1920,12 +2376,10 @@
       }
     });
     socket.on("feedback_update", (data) => {
-      console.log("Feedback update event received:", data);
       log("Feedback update received");
       if(data) {
         try {
           renderFeedback(data);
-          console.log("✓ Feedback data rendered successfully");
         } catch(error) {
           console.error("Error rendering feedback data:", error);
           log(`Error rendering feedback: ${error.message}`);
@@ -1936,7 +2390,6 @@
     });
     
     socket.on("feedback_status_update", (data) => {
-      console.log("Feedback status update received:", data);
       const isActive = data.is_active || false;
       const statusElement = document.getElementById("m3-kiosk-status");
       const indicatorElement = document.getElementById("m3-kiosk-indicator");
@@ -2155,7 +2608,6 @@
     }
     
     socket.on("ai_analysis_result", (data) => {
-      console.log("AI analysis result received:", data);
       if(data.result || data.people_count !== undefined) {
         const result = data.result || data;
         log(`AI Analysis complete: ${result.count || data.people_count || 0} people detected (broadcast from another dashboard)`);
@@ -2176,8 +2628,21 @@
 
     // Boot
     $(document).ready(function(){
+      console.log("=== DOCUMENT READY ===");
+      console.log("jQuery version:", $.fn.jquery);
+      console.log("Chart available:", typeof Chart !== 'undefined');
+      
       wireUi();
-      initCharts();
+      
+      // Initialize charts first
+      console.log("=== ABOUT TO INITIALIZE CHARTS ===");
+      try {
+        initCharts();
+      } catch(error) {
+        console.error("!!! ERROR INITIALIZING CHARTS !!!", error);
+        console.error(error.stack);
+      }
+      
       setDot("dot-m5", "offline");
       document.getElementById("dbg-m5").textContent = "—";
 
@@ -2186,8 +2651,9 @@
       updateKpis();
       log("Dashboard ready");
       
-      // Start polling for data updates every 2 seconds
-      startPolling();
+      // Rating chart loads via loadAllCharts() - no separate call needed
+      
+      // Real-time updates handled via Socket.IO events - no polling needed
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
       setModuleStatus("m1-status", "idle");

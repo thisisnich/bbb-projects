@@ -68,6 +68,118 @@ if ANTHROPIC_AVAILABLE:
         anthropic_client = None
         print("[WARNING] ANTHROPIC_API_KEY not set. AI image analysis disabled.")
 
+# OpenCV People Detection (MobileNet SSD)
+OPENCV_AVAILABLE = False
+opencv_net = None
+opencv_class_list = []
+opencv_color_list = None
+
+try:
+    import cv2
+    import numpy as np
+    OPENCV_AVAILABLE = True
+    print("[INFO] OpenCV library imported successfully")
+except ImportError as e:
+    print(f"[WARNING] Failed to import OpenCV library: {e}")
+    print("[INFO] Install with: pip install opencv-python numpy")
+except Exception as e:
+    print(f"[WARNING] Unexpected error importing OpenCV: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Detection method configuration
+# Priority: 1. Environment variable, 2. Auto-detect, 3. Default to claude
+PEOPLE_DETECTION_METHOD = os.environ.get('PEOPLE_DETECTION_METHOD', 'auto')
+
+def init_opencv_model():
+    """Initialize OpenCV MobileNet SSD model for people detection"""
+    global opencv_net, opencv_class_list, opencv_color_list
+    
+    if not OPENCV_AVAILABLE:
+        return False
+    
+    # Get model directory path
+    model_dir = os.path.join(os.path.dirname(__file__), 'model_data')
+    config_path = os.path.join(model_dir, 'ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt')
+    model_path = os.path.join(model_dir, 'frozen_inference_graph.pb')
+    classes_path = os.path.join(model_dir, 'coco.names')
+    
+    # Check if all model files exist
+    if not all(os.path.exists(p) for p in [config_path, model_path, classes_path]):
+        print(f"[WARNING] OpenCV model files not found in {model_dir}")
+        print(f"[INFO] Missing files:")
+        if not os.path.exists(config_path):
+            print(f"  - {config_path}")
+        if not os.path.exists(model_path):
+            print(f"  - {model_path}")
+        if not os.path.exists(classes_path):
+            print(f"  - {classes_path}")
+        print(f"[INFO] See {model_dir}/README.md for download instructions")
+        return False
+    
+    try:
+        # Load model
+        opencv_net = cv2.dnn_DetectionModel(model_path, config_path)
+        opencv_net.setInputSize(320, 320)
+        opencv_net.setInputScale(1.0/127.5)
+        opencv_net.setInputMean((127.5, 127.5, 127.5))
+        opencv_net.setInputSwapRB(True)
+        
+        # Load class names
+        with open(classes_path, 'r') as f:
+            opencv_class_list = f.read().splitlines()
+        
+        # Insert background class at index 0 (COCO format)
+        opencv_class_list.insert(0, '__Background__')
+        
+        # Generate random colors for each class
+        opencv_color_list = np.random.uniform(low=0, high=255, size=(len(opencv_class_list), 3))
+        
+        print(f"[INFO] OpenCV MobileNet SSD model loaded successfully")
+        print(f"[INFO] Model supports {len(opencv_class_list)} classes")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize OpenCV model: {e}")
+        import traceback
+        traceback.print_exc()
+        opencv_net = None
+        return False
+
+# Initialize OpenCV model on startup
+opencv_model_ready = False
+if OPENCV_AVAILABLE:
+    opencv_model_ready = init_opencv_model()
+
+# Determine detection method
+if PEOPLE_DETECTION_METHOD == 'auto':
+    # Auto-detect: prefer OpenCV if available, else Claude
+    if opencv_model_ready:
+        PEOPLE_DETECTION_METHOD = 'opencv'
+        print("[INFO] Auto-selected detection method: OpenCV (model files found)")
+    elif anthropic_client:
+        PEOPLE_DETECTION_METHOD = 'claude'
+        print("[INFO] Auto-selected detection method: Claude AI (API key available)")
+    else:
+        PEOPLE_DETECTION_METHOD = 'none'
+        print("[WARNING] No detection method available (no OpenCV model or Claude API key)")
+elif PEOPLE_DETECTION_METHOD == 'opencv':
+    if not opencv_model_ready:
+        print("[WARNING] OpenCV method requested but model not available, falling back to Claude")
+        if anthropic_client:
+            PEOPLE_DETECTION_METHOD = 'claude'
+        else:
+            PEOPLE_DETECTION_METHOD = 'none'
+elif PEOPLE_DETECTION_METHOD == 'claude':
+    if not anthropic_client:
+        print("[WARNING] Claude method requested but API key not available, falling back to OpenCV")
+        if opencv_model_ready:
+            PEOPLE_DETECTION_METHOD = 'opencv'
+        else:
+            PEOPLE_DETECTION_METHOD = 'none'
+
+print(f"[INFO] People detection method: {PEOPLE_DETECTION_METHOD}")
+
 app = Flask(__name__)
 # Set max content length for file uploads (16MB as per documentation)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -100,14 +212,15 @@ def login_required(role=None):
         return decorated_function
     return decorator
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-# --- Comprehensive Data Storage System ---
->>>>>>> c668bf5 (Add authentication system with role-based dashboards)
 # --- Historical Data Storage ---
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'history.json')
 HISTORY_DB = os.path.join(os.path.dirname(__file__), 'history.db')
 USE_DATABASE = True  # Set to False to use JSON files instead
+
+# Separate database files for each module
+CROWD_DB = os.path.join(os.path.dirname(__file__), 'crowd.db')
+ENV_DB = os.path.join(os.path.dirname(__file__), 'env.db')
+RATING_DB = os.path.join(os.path.dirname(__file__), 'rating.db')
 
 # Minute-based averaging buffers (collect data for 1 minute, then save average)
 minute_buffers = {
@@ -126,6 +239,67 @@ def init_database():
         return
     
     try:
+        # Initialize separate database files
+        # Crowd database
+        conn_crowd = sqlite3.connect(CROWD_DB)
+        cursor_crowd = conn_crowd.cursor()
+        cursor_crowd.execute('''
+            CREATE TABLE IF NOT EXISTS crowd_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                people_count INTEGER,
+                noise_db REAL,
+                crowd_level TEXT,
+                confidence REAL,
+                motion_detected INTEGER,
+                proximity_triggered INTEGER
+            )
+        ''')
+        cursor_crowd.execute('CREATE INDEX IF NOT EXISTS idx_crowd_timestamp ON crowd_data(timestamp)')
+        conn_crowd.commit()
+        conn_crowd.close()
+        print(f"[INFO] Crowd database initialized: {CROWD_DB}")
+        
+        # Environment database
+        conn_env = sqlite3.connect(ENV_DB)
+        cursor_env = conn_env.cursor()
+        cursor_env.execute('''
+            CREATE TABLE IF NOT EXISTS env_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                temperature_c REAL,
+                humidity_percent REAL,
+                pressure_hpa REAL,
+                uv_index REAL,
+                voc_level TEXT,
+                comfort_score REAL
+            )
+        ''')
+        cursor_env.execute('CREATE INDEX IF NOT EXISTS idx_env_timestamp ON env_data(timestamp)')
+        conn_env.commit()
+        conn_env.close()
+        print(f"[INFO] Environment database initialized: {ENV_DB}")
+        
+        # Rating database
+        conn_rating = sqlite3.connect(RATING_DB)
+        cursor_rating = conn_rating.cursor()
+        cursor_rating.execute('''
+            CREATE TABLE IF NOT EXISTS rating_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                rating INTEGER,
+                report_type TEXT,
+                question_text TEXT,
+                text_response TEXT,
+                issue_category TEXT
+            )
+        ''')
+        cursor_rating.execute('CREATE INDEX IF NOT EXISTS idx_rating_timestamp ON rating_data(timestamp)')
+        conn_rating.commit()
+        conn_rating.close()
+        print(f"[INFO] Rating database initialized: {RATING_DB}")
+        
+        # Also initialize legacy history.db for backward compatibility
         conn = sqlite3.connect(HISTORY_DB)
         cursor = conn.cursor()
         
@@ -184,7 +358,7 @@ def init_database():
         
         conn.commit()
         conn.close()
-        print(f"[INFO] Database initialized: {HISTORY_DB}")
+        print(f"[INFO] Legacy database initialized: {HISTORY_DB}")
     except Exception as e:
         print(f"[ERROR] Failed to initialize database: {e}")
         import traceback
@@ -270,6 +444,74 @@ def save_minute_averages():
         # Module 3: Feedback (save immediately, not averaged)
         # This is handled separately in handle_feedback_data
 
+def write_crowd_to_db(data_dict):
+    """Write crowd data directly to crowd.db"""
+    try:
+        conn = sqlite3.connect(CROWD_DB)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO crowd_data 
+            (timestamp, people_count, noise_db, crowd_level, confidence, motion_detected, proximity_triggered)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('people_count'),
+            data_dict.get('noise_db'),
+            data_dict.get('crowd_level'),
+            data_dict.get('confidence'),
+            1 if data_dict.get('motion_detected') else 0,
+            1 if data_dict.get('proximity_triggered') else 0
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ERROR] Failed to write crowd data to database: {e}")
+
+def write_env_to_db(data_dict):
+    """Write environment data directly to env.db"""
+    try:
+        conn = sqlite3.connect(ENV_DB)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO env_data 
+            (timestamp, temperature_c, humidity_percent, pressure_hpa, uv_index, voc_level, comfort_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('temperature_c'),
+            data_dict.get('humidity_percent'),
+            data_dict.get('pressure_hpa'),
+            data_dict.get('uv_index'),
+            data_dict.get('voc_level'),
+            data_dict.get('comfort_score')
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ERROR] Failed to write environment data to database: {e}")
+
+def write_rating_to_db(data_dict):
+    """Write rating/feedback data directly to rating.db"""
+    try:
+        conn = sqlite3.connect(RATING_DB)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO rating_data 
+            (timestamp, rating, report_type, question_text, text_response, issue_category)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('rating'),
+            data_dict.get('report_type'),
+            data_dict.get('question_text'),
+            data_dict.get('text_response'),
+            data_dict.get('issue_category')
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ERROR] Failed to write rating data to database: {e}")
+
 def add_to_buffer(buffer_name, data):
     """Add data point to minute buffer"""
     with buffer_lock:
@@ -342,7 +584,11 @@ def get_history_from_db(module, start_date=None, end_date=None, limit=1000):
     except Exception as e:
         print(f"[ERROR] Failed to query database: {e}")
         return []
->>>>>>> 5cbae18 (Add history system implementation)
+
+# Data storage directory
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+# Create data directory if it doesn't exist
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Data storage files
 CROWD_DATA_FILE = os.path.join(DATA_DIR, 'crowd_history.json')
@@ -755,21 +1001,6 @@ def get_weekly_pattern(history, current_hour, current_people_count, capacity=10)
     
     return week_same_time
 
-<<<<<<< HEAD
-# Initialize all historical data on startup
-historical_data = load_crowd_history()
-crowd_entry_count = len(historical_data.get('entries', []))
-
-environment_history = load_environment_history()
-env_entry_count = len(environment_history.get('entries', []))
-
-feedback_history = load_feedback_history()
-feedback_entry_count = len(feedback_history.get('entries', []))
-
-module_states = load_module_states()
-connection_history = load_connection_history()
-connection_count = len(connection_history.get('connections', []))
-
 # Initialize all historical data on startup
 historical_data = load_crowd_history()
 crowd_entry_count = len(historical_data.get('entries', []))
@@ -829,6 +1060,10 @@ current_data = {
     'environment': None,
     'feedback': []
 }
+
+# Track last analysis time for throttling OpenCV analysis (per module)
+last_opencv_analysis_time = {}  # {module_id: timestamp}
+ANALYSIS_INTERVAL = 5.0  # Analyze every 5 seconds
 
 # Module 3 specific tracking (loaded from persistent storage)
 module3_state = module_states.get('module3_state', {
@@ -1106,12 +1341,117 @@ def module1_test():
 def debug_page():
     return render_template('debug.html')
 
+def detect_people_opencv(image_base64: str) -> dict:
+    """
+    Detect people in image using OpenCV MobileNet SSD.
+    
+    Args:
+        image_base64: Base64-encoded JPEG image string
+        
+    Returns:
+        {
+            'count': int,
+            'confidence': float (0.0-1.0),
+            'crowd_level': str ('empty'|'light'|'normal'|'busy'|'full'),
+            'details': str,
+            'source': 'opencv'
+        }
+    """
+    global opencv_net, opencv_class_list
+    
+    if not opencv_model_ready or opencv_net is None:
+        raise ValueError("OpenCV model not initialized")
+    
+    try:
+        # Decode base64 image
+        image_bytes = base64.b64decode(image_base64)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise ValueError("Failed to decode image")
+        
+        # Run detection
+        classLabelIDs, confidences, bboxs = opencv_net.detect(image, confThreshold=0.4)
+        
+        # Process detections
+        detections = []
+        bboxs = list(bboxs)
+        confidences = list(np.array(confidences).reshape(1, -1)[0]) if len(confidences) > 0 else []
+        confidences = list(map(float, confidences))
+        
+        if len(bboxs) > 0:
+            # Apply Non-Maximum Suppression
+            bboxIdx = cv2.dnn.NMSBoxes(bboxs, confidences, score_threshold=0.5, nms_threshold=0.2)
+            
+            if len(bboxIdx) != 0:
+                for i in range(0, len(bboxIdx)):
+                    bbox = bboxs[np.squeeze(bboxIdx[i])]
+                    classConfidence = confidences[np.squeeze(bboxIdx[i])]
+                    classLabelID = np.squeeze(classLabelIDs[np.squeeze(bboxIdx[i])])
+                    classLabel = opencv_class_list[classLabelID]
+                    
+                    # Store detection
+                    detections.append({
+                        'class': classLabel,
+                        'confidence': classConfidence,
+                        'bbox': bbox
+                    })
+        
+        # Count people
+        person_count = sum(1 for d in detections if d['class'] == 'person')
+        
+        # Calculate average confidence for people detections
+        person_confidences = [d['confidence'] for d in detections if d['class'] == 'person']
+        avg_confidence = sum(person_confidences) / len(person_confidences) if person_confidences else 0.0
+        
+        # Determine crowd level
+        if person_count == 0:
+            crowd_level = 'empty'
+        elif person_count <= 2:
+            crowd_level = 'light'
+        elif person_count <= 5:
+            crowd_level = 'normal'
+        elif person_count <= 7:
+            crowd_level = 'busy'
+        else:
+            crowd_level = 'full'
+        
+        # Generate description
+        other_objects = [d['class'] for d in detections if d['class'] != 'person' and d['confidence'] > 0.5]
+        unique_objects = list(set(other_objects))[:3]
+        
+        if person_count > 0:
+            description = f"{person_count} person" if person_count == 1 else f"{person_count} people"
+            description += " detected"
+            if unique_objects:
+                description += f", also detected: {', '.join(unique_objects)}"
+        else:
+            description = "No people detected"
+            if unique_objects:
+                description += f", but detected: {', '.join(unique_objects)}"
+        
+        return {
+            'count': person_count,
+            'confidence': min(1.0, max(0.0, avg_confidence)) if person_count > 0 else 0.0,
+            'crowd_level': crowd_level,
+            'details': description,
+            'source': 'opencv'
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] OpenCV detection failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
 @app.route('/api/analyze_image', methods=['POST'])
 def analyze_image():
-    """Analyze uploaded image using Claude AI for people counting"""
+    """Analyze uploaded image using Claude AI or OpenCV for people counting"""
     try:
-        if not anthropic_client:
-            return jsonify({'error': 'AI service not available. ANTHROPIC_API_KEY not configured.'}), 503
+        # Check for method override in query parameter
+        method_override = request.args.get('method', '').lower()
+        use_method = method_override if method_override in ['opencv', 'claude'] else PEOPLE_DETECTION_METHOD
         
         if 'image' not in request.files:
             return jsonify({'error': 'No image file provided'}), 400
@@ -1132,75 +1472,98 @@ def analyze_image():
         if len(image_data) > max_size:
             return jsonify({'error': f'File too large. Maximum size is {max_size / (1024*1024):.0f}MB'}), 400
         
-        print(f"[{datetime.now()}] Analyzing image with AI (size: {len(image_data)} bytes)")
+        print(f"[{datetime.now()}] Analyzing image with {use_method} (size: {len(image_data)} bytes)")
         
-        # Send to Claude API
-        message = anthropic_client.messages.create(
-            model='claude-sonnet-4-20250514',
-            max_tokens=1000,
-            messages=[{
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image',
-                        'source': {
-                            'type': 'base64',
-                            'media_type': content_type,
-                            'data': image_base64,
-                        },
-                    },
-                    {
-                        'type': 'text',
-                        'text': '''Count the number of people visible in this image, regardless of the scene type (basketball court, meeting room, study space, etc.). 
-                        Always return a people count even if the scene is not a basketball court.
-                        Analyze the scene and return ONLY valid JSON in this exact format:
+        # Use OpenCV if requested and available
+        if use_method == 'opencv':
+            if not opencv_model_ready:
+                return jsonify({'error': 'OpenCV model not available. Model files not found or not initialized.'}), 503
+            
+            try:
+                result = detect_people_opencv(image_base64)
+                people_count = result['count']
+                confidence = result['confidence']
+                crowd_level = result['crowd_level']
+                details = result['details']
+                
+                print(f"[{datetime.now()}] OpenCV detection result: {people_count} people, confidence: {confidence:.2f}")
+                
+            except Exception as e:
+                print(f"[{datetime.now()}] OpenCV detection failed: {e}")
+                return jsonify({'error': f'OpenCV detection failed: {str(e)}'}), 500
+        
+        # Use Claude AI (default or if OpenCV not available)
+        elif use_method == 'claude':
+            if not anthropic_client:
+                return jsonify({'error': 'AI service not available. ANTHROPIC_API_KEY not configured.'}), 503
+            
+            # Send to Claude API
+            message = anthropic_client.messages.create(
+                model='claude-sonnet-4-20250514',
+                max_tokens=1000,
+                messages=[{
+                    'role': 'user',
+                    'content': [
                         {
-                            "count": <number>,
-                            "details": "<brief description of scene and people>",
-                            "crowd_level": "<empty|light|normal|busy|full>",
-                            "confidence": <0.0-1.0>
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': content_type,
+                                'data': image_base64,
+                            },
+                        },
+                        {
+                            'type': 'text',
+                            'text': '''Count the number of people visible in this image, regardless of the scene type (basketball court, meeting room, study space, etc.). 
+                            Always return a people count even if the scene is not a basketball court.
+                            Analyze the scene and return ONLY valid JSON in this exact format:
+                            {
+                                "count": <number>,
+                                "details": "<brief description of scene and people>",
+                                "crowd_level": "<empty|light|normal|busy|full>",
+                                "confidence": <0.0-1.0>
+                            }
+                            Do not include any markdown formatting or code blocks. Always provide a count value, even if the scene type doesn't match expectations.'''
                         }
-                        Do not include any markdown formatting or code blocks. Always provide a count value, even if the scene type doesn't match expectations.'''
-                    }
-                ],
-            }],
-        )
-        
-        # Parse response
-        response_text = message.content[0].text.strip()
-        # Remove markdown code blocks if present
-        response_text = response_text.replace('```json', '').replace('```', '').strip()
-        
-        # Check if response contains error about scene type but try to extract count anyway
-        scene_type_warning = False
-        if 'not a basketball court' in response_text.lower() or 'basketball court' in response_text.lower():
-            scene_type_warning = True
-            print(f"[{datetime.now()}] Warning: Scene type mismatch detected, but attempting to extract people count anyway")
-        
-        try:
-            result = json.loads(response_text)
-        except json.JSONDecodeError:
-            # Try to extract JSON from response (handle cases where Claude adds text before/after JSON)
-            import re
-            # Try to find JSON object in response (more robust pattern)
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
-            if json_match:
-                try:
-                    result = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    # If still fails, try to extract just the count number
-                    count_match = re.search(r'"count"\s*:\s*(\d+)', response_text)
-                    if count_match:
-                        people_count = int(count_match.group(1))
-                        result = {
-                            'count': people_count,
-                            'details': response_text[:100] if len(response_text) > 100 else response_text,
-                            'crowd_level': 'normal',
-                            'confidence': 0.7
-                        }
-                        print(f"[{datetime.now()}] Extracted people count from text response: {people_count}")
-                    else:
-                        raise ValueError(f"Could not parse JSON from response: {response_text[:200]}")
+                    ],
+                }],
+            )
+            
+            # Parse response
+            response_text = message.content[0].text.strip()
+            # Remove markdown code blocks if present
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+            
+            # Check if response contains error about scene type but try to extract count anyway
+            scene_type_warning = False
+            if 'not a basketball court' in response_text.lower() or 'basketball court' in response_text.lower():
+                scene_type_warning = True
+                print(f"[{datetime.now()}] Warning: Scene type mismatch detected, but attempting to extract people count anyway")
+            
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError:
+                # Try to extract JSON from response (handle cases where Claude adds text before/after JSON)
+                import re
+                # Try to find JSON object in response (more robust pattern)
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                if json_match:
+                    try:
+                        result = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        # If still fails, try to extract just the count number
+                        count_match = re.search(r'"count"\s*:\s*(\d+)', response_text)
+                        if count_match:
+                            people_count = int(count_match.group(1))
+                            result = {
+                                'count': people_count,
+                                'details': response_text[:100] if len(response_text) > 100 else response_text,
+                                'crowd_level': 'normal',
+                                'confidence': 0.7
+                            }
+                            print(f"[{datetime.now()}] Extracted people count from text response: {people_count}")
+                        else:
+                            raise ValueError(f"Could not parse JSON from response: {response_text[:200]}")
                 else:
                     # Last resort: try to extract just the count number from various patterns
                     count_match = re.search(r'"count"\s*:\s*(\d+)', response_text)
@@ -1228,13 +1591,18 @@ def analyze_image():
                             'crowd_level': 'empty',
                             'confidence': 0.0
                         }
+            
+            print(f"[{datetime.now()}] Claude AI Analysis result: {result}")
+            
+            # Extract people count and confidence from AI result
+            people_count = result.get('count', 0)
+            confidence = result.get('confidence', 0.85)
+            crowd_level = result.get('crowd_level', 'empty')
+            details = result.get('details', '')
         
-        print(f"[{datetime.now()}] AI Analysis result: {result}")
-        
-        # Extract people count and confidence from AI result
-        people_count = result.get('count', 0)
-        confidence = result.get('confidence', 0.85)
-        crowd_level = result.get('crowd_level', 'empty')
+        else:
+            # No method available
+            return jsonify({'error': f'Detection method "{use_method}" not available. Use ?method=opencv or ?method=claude'}), 503
         
         # Map crowd_level to standard values if needed
         if isinstance(crowd_level, str):
@@ -1261,10 +1629,11 @@ def analyze_image():
                 'people_count': people_count,
                 'crowd_level': crowd_level,
                 'confidence': confidence,
-                'source': 'ai_image_analysis'
+                'source': use_method
             },
             '_ai_analysis': True,  # Flag to mark this as AI analysis data
-            '_ai_timestamp': datetime.now().isoformat()  # Store timestamp for comparison
+            '_ai_timestamp': datetime.now().isoformat(),  # Store timestamp for comparison
+            '_detection_method': use_method
         }
         
         # Update current_data with AI analysis results
@@ -1697,6 +2066,117 @@ def get_module_status_api():
         'timestamp': datetime.now().isoformat()
     })
 
+# --- Chart Data API Endpoints (read from separate databases) ---
+@app.route('/api/charts/crowd')
+def get_chart_crowd_data():
+    """Get crowd data from crowd.db for charts"""
+    try:
+        hours = int(request.args.get('hours', 24))  # Default: last 24 hours
+        limit = int(request.args.get('limit', 1000))
+        
+        conn = sqlite3.connect(CROWD_DB)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get data from last N hours
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        cursor.execute('''
+            SELECT timestamp, people_count, noise_db, crowd_level, confidence
+            FROM crowd_data
+            WHERE timestamp >= ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (cutoff, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dicts
+        data = [dict(row) for row in rows]
+        data.reverse()  # Oldest first for charts
+        
+        return jsonify({
+            'data': data,
+            'count': len(data),
+            'hours': hours,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/charts/environment')
+def get_chart_env_data():
+    """Get environment data from env.db for charts"""
+    try:
+        hours = int(request.args.get('hours', 24))  # Default: last 24 hours
+        limit = int(request.args.get('limit', 1000))
+        
+        conn = sqlite3.connect(ENV_DB)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get data from last N hours
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        cursor.execute('''
+            SELECT timestamp, temperature_c, humidity_percent, uv_index, comfort_score, voc_level
+            FROM env_data
+            WHERE timestamp >= ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (cutoff, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dicts
+        data = [dict(row) for row in rows]
+        data.reverse()  # Oldest first for charts
+        
+        return jsonify({
+            'data': data,
+            'count': len(data),
+            'hours': hours,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/charts/rating')
+def get_chart_rating_data():
+    """Get rating data from rating.db for charts"""
+    try:
+        days = int(request.args.get('days', 7))  # Default: last 7 days
+        limit = int(request.args.get('limit', 1000))
+        
+        conn = sqlite3.connect(RATING_DB)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get data from last N days
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute('''
+            SELECT timestamp, rating, report_type
+            FROM rating_data
+            WHERE timestamp >= ? AND report_type = 'rating'
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (cutoff, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dicts (already in DESC order from query)
+        data = [dict(row) for row in rows]
+        
+        return jsonify({
+            'data': data,
+            'count': len(data),
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # --- Module Registration ---
 @socketio.on('module_register')
 def handle_module_register(data):
@@ -1743,19 +2223,29 @@ def handle_crowd_data(data):
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
     
-<<<<<<< HEAD
     # Update module status
     module_id = data.get('module_id', 'unknown')
     update_module_status('crowd_detection', module_id, is_online=True)
     
     # Save to persistent storage with full historical records
-    # Add to minute buffer for averaging
+    # Write directly to crowd.db
     if 'data' in data:
         people_count = data['data'].get('people_count', 0)
         noise_db = data['data'].get('noise_db')
         timestamp = datetime.now()
         
-        # Add to crowd buffer (includes both people_count and noise)
+        # Write directly to crowd.db
+        write_crowd_to_db({
+            'timestamp': timestamp.isoformat(),
+            'people_count': people_count,
+            'noise_db': noise_db,
+            'crowd_level': data['data'].get('crowd_level'),
+            'confidence': data['data'].get('confidence'),
+            'motion_detected': data['data'].get('motion_detected'),
+            'proximity_triggered': data['data'].get('proximity_triggered')
+        })
+        
+        # Also add to minute buffer for legacy averaging (if needed)
         add_to_buffer('module1_crowd', {
             'people_count': people_count,
             'noise_db': noise_db,
@@ -1780,18 +2270,12 @@ def handle_crowd_data(data):
                     timestamp = datetime.now()
             else:
                 timestamp = datetime.now()
-<<<<<<< HEAD
         else:
             timestamp = datetime.now()
+        
         # Save to persistent storage with full data
         global historical_data
         historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
-        # Also add to minute buffer for averaging
-        add_to_buffer('module1_crowd', {
-            'people_count': people_count,
-            'noise_db': data.get('data', {}).get('noise_db'),
-            'timestamp': timestamp.isoformat()
-        })
     
     socketio.emit('crowd_update', data)
     
@@ -1827,8 +2311,17 @@ def handle_crowd_data(data):
 @socketio.on('CrowdVideoFrameEvent')
 def handle_crowd_video(data):
     """Receive video frames from Module 1"""
+    global historical_data
     module_id = data.get('module_id', 'unknown')
-    print(f"[{datetime.now()}] Received Video Frame from {module_id}")
+    
+    # Check if video frame is in the data
+    has_video_frame = False
+    frame_size = 0
+    if 'data' in data and isinstance(data['data'], dict) and 'video_frame' in data['data']:
+        has_video_frame = True
+        frame_size = len(data['data']['video_frame'])
+    
+    print(f"[{datetime.now()}] ✓ Received CrowdVideoFrameEvent from {module_id} (frame: {has_video_frame}, size: {frame_size} bytes)")
     
     # Auto-register module if not already registered (when receiving video frames)
     module_type = 'crowd_detection'
@@ -1849,13 +2342,188 @@ def handle_crowd_video(data):
     # Client sends: {'module_id': ..., 'data': {'video_frame': '...', ...}}
     # Frontend expects: {'module_id': ..., 'video_frame': '...', 'data': {...}}
     video_frame_data = data.copy()
+    video_frame_base64 = None
     if 'data' in data and isinstance(data['data'], dict):
         # Extract video_frame from nested data if it exists
         if 'video_frame' in data['data']:
-            video_frame_data['video_frame'] = data['data']['video_frame']
-            print(f"[{datetime.now()}] Extracted video frame ({len(data['data']['video_frame'])} bytes) from nested data")
+            video_frame_base64 = data['data']['video_frame']
+            video_frame_data['video_frame'] = video_frame_base64
+            print(f"[{datetime.now()}] Extracted video frame ({len(video_frame_base64)} bytes) from nested data")
     
-    # Update current data if video frame includes crowd data
+    # Ensure video_frame_data has a 'data' dict for storing analysis results
+    if 'data' not in video_frame_data:
+        video_frame_data['data'] = {}
+    elif not isinstance(video_frame_data['data'], dict):
+        video_frame_data['data'] = {}
+    
+    # Preserve existing sensor data from Module 1
+    if 'data' in data and isinstance(data['data'], dict):
+        for key in ['noise_db', 'motion_detected', 'proximity_triggered', 'sensors_status']:
+            if key in data['data']:
+                video_frame_data['data'][key] = data['data'][key]
+    
+    # PRIORITY 1: Emit video frame immediately for display (don't wait for analysis)
+    # This ensures smooth video streaming
+    socketio.emit('crowd_video_update', video_frame_data)
+    print(f"[{datetime.now()}] ✓ Emitted crowd_video_update to frontend: frame_size={len(video_frame_base64) if video_frame_base64 else 0} bytes, module_id={module_id}")
+    
+    # PRIORITY 2: Run OpenCV analysis in background thread, only every 5 seconds
+    # This prevents blocking the video stream
+    if video_frame_base64 and PEOPLE_DETECTION_METHOD == 'opencv' and opencv_model_ready:
+        current_time = time.time()
+        last_analysis = last_opencv_analysis_time.get(module_id, 0)
+        
+        # Only analyze if 5 seconds have passed since last analysis
+        if (current_time - last_analysis) >= ANALYSIS_INTERVAL:
+            last_opencv_analysis_time[module_id] = current_time
+            
+            # Run analysis in background thread to not block video stream
+            def analyze_frame_async():
+                try:
+                    print(f"[{datetime.now()}] Starting background OpenCV analysis for {module_id}")
+                    result = detect_people_opencv(video_frame_base64)
+                    people_count = result['count']
+                    confidence = result['confidence']
+                    crowd_level = result['crowd_level']
+                    
+                    print(f"[{datetime.now()}] OpenCV detection complete: {people_count} people, confidence: {confidence:.2f}, level: {crowd_level}")
+                    
+                    # Update current_data with analysis results
+                    global historical_data
+                    if 'crowd' not in current_data or current_data['crowd'] is None:
+                        current_data['crowd'] = {}
+                    
+                    current_data['crowd'].update({
+                        'module_id': module_id,
+                        'module_type': 'crowd_detection',
+                        'timestamp': datetime.now().isoformat(),
+                        'court_id': data.get('court_id', 'basketball_a'),
+                        'data': {
+                            'people_count': people_count,
+                            'crowd_level': crowd_level,
+                            'confidence': confidence,
+                            'noise_db': video_frame_data.get('data', {}).get('noise_db'),
+                            'motion_detected': video_frame_data.get('data', {}).get('motion_detected'),
+                            'proximity_triggered': video_frame_data.get('data', {}).get('proximity_triggered')
+                        },
+                        '_ai_analysis': True,
+                        '_ai_timestamp': datetime.now().isoformat(),
+                        '_detection_method': 'opencv'
+                    })
+                    
+                    # Save to persistent storage
+                    timestamp = datetime.now()
+                    historical_data = add_crowd_entry(people_count, timestamp, full_data=current_data['crowd'])
+                    
+                    # Write directly to crowd.db
+                    noise_db = video_frame_data.get('data', {}).get('noise_db')
+                    write_crowd_to_db({
+                        'timestamp': timestamp.isoformat(),
+                        'people_count': people_count,
+                        'noise_db': noise_db,
+                        'crowd_level': crowd_level,
+                        'confidence': confidence,
+                        'motion_detected': video_frame_data.get('data', {}).get('motion_detected'),
+                        'proximity_triggered': video_frame_data.get('data', {}).get('proximity_triggered')
+                    })
+                    
+                    # Also add to minute buffer for legacy averaging (if needed)
+                    add_to_buffer('module1_crowd', {
+                        'people_count': people_count,
+                        'noise_db': noise_db,
+                        'timestamp': datetime.now()
+                    })
+                    
+                    if noise_db is not None:
+                        add_to_buffer('module1_audio', {
+                            'noise_db': noise_db,
+                            'timestamp': datetime.now()
+                        })
+                    
+                    # Emit crowd update with people count (separate from video frame)
+                    socketio.emit('crowd_update', current_data['crowd'])
+                    print(f"[{datetime.now()}] Emitted crowd_update with {people_count} people")
+                    
+                    # Generate and send Module 5 data
+                    court_id = data.get('court_id', 'basketball_a')
+                    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+                    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+                    
+                    module5_data = generate_module5_from_modules(
+                        court_id=court_id,
+                        crowd_data=current_data['crowd'],
+                        env_data=env_data_for_module5,
+                        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
+                    )
+                    socketio.emit('DisplayUpdate', module5_data)
+                    
+                except Exception as e:
+                    print(f"[{datetime.now()}] ERROR: Background OpenCV analysis failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Start analysis in background thread
+            analysis_thread = threading.Thread(target=analyze_frame_async, daemon=True)
+            analysis_thread.start()
+        else:
+            # Analysis was done recently, skip this frame
+            time_since_last = current_time - last_analysis
+            print(f"[{datetime.now()}] Skipping analysis (last analysis {time_since_last:.1f}s ago, interval: {ANALYSIS_INTERVAL}s)")
+    
+    # Update current_data with the analyzed results (if OpenCV analysis was done)
+    # This ensures the people count is stored and available for Module 5 generation
+    if video_frame_data.get('data', {}).get('people_count') is not None:
+        # We have OpenCV analysis results - update current_data
+        # Initialize crowd data if it doesn't exist or is None
+        if 'crowd' not in current_data or current_data['crowd'] is None:
+            current_data['crowd'] = {}
+        
+        # Update with video frame data, preserving existing structure
+        current_data['crowd'].update({
+            'module_id': video_frame_data.get('module_id', module_id),
+            'module_type': 'crowd_detection',
+            'timestamp': video_frame_data.get('timestamp', datetime.now().isoformat()),
+            'court_id': video_frame_data.get('court_id', 'basketball_a')
+        })
+        
+        # Update the data section with analysis results
+        if 'data' not in current_data['crowd']:
+            current_data['crowd']['data'] = {}
+        current_data['crowd']['data'].update(video_frame_data.get('data', {}))
+        
+        # Preserve analysis metadata
+        current_data['crowd']['_ai_analysis'] = True
+        current_data['crowd']['_ai_timestamp'] = datetime.now().isoformat()
+        current_data['crowd']['_detection_method'] = 'opencv'
+        
+        # Save to persistent storage
+        people_count = video_frame_data['data']['people_count']
+        timestamp_str = video_frame_data.get('timestamp') or datetime.now().isoformat()
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        except:
+            timestamp = datetime.now()
+        
+        # historical_data is already declared as global at the top of the function
+        historical_data = add_crowd_entry(people_count, timestamp, full_data=current_data['crowd'])
+        
+        # Add to minute buffer
+        noise_db = video_frame_data.get('data', {}).get('noise_db')
+        add_to_buffer('module1_crowd', {
+            'people_count': people_count,
+            'noise_db': noise_db,
+            'timestamp': datetime.now()
+        })
+        
+        if noise_db is not None:
+            add_to_buffer('module1_audio', {
+                'noise_db': noise_db,
+                'timestamp': datetime.now()
+            })
+        
+        print(f"[{datetime.now()}] Updated current_data['crowd'] with OpenCV analysis: {people_count} people")
+    
+    # Also handle data from Module 1 client (if it includes people_count from client side)
     # But preserve AI analysis data if it's recent and Module 1 data is empty/old
     if 'data' in data and data['data']:
         incoming_people_count = data.get('data', {}).get('people_count', 0)
@@ -1902,9 +2570,10 @@ def handle_crowd_video(data):
                     current_data['crowd'].update(data)
                 else:
                     current_data['crowd'] = data
-<<<<<<< HEAD
+                
                 # Save to persistent storage
                 if 'data' in data and data['data']:
+                    # historical_data is already declared as global at the top of the function
                     people_count = data.get('data', {}).get('people_count', 0)
                     timestamp_str = data.get('timestamp')
                     if timestamp_str:
@@ -1914,7 +2583,6 @@ def handle_crowd_video(data):
                             timestamp = datetime.now()
                     else:
                         timestamp = datetime.now()
-                    global historical_data
                     historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
                 
                 # Add to minute buffer if we have crowd data
@@ -1940,7 +2608,7 @@ def handle_crowd_video(data):
                 current_data['crowd'].update(data)
             else:
                 current_data['crowd'] = data
-<<<<<<< HEAD
+            
             # Save to persistent storage
             if 'data' in data and data['data']:
                 people_count = data.get('data', {}).get('people_count', 0)
@@ -1952,7 +2620,6 @@ def handle_crowd_video(data):
                         timestamp = datetime.now()
                 else:
                     timestamp = datetime.now()
-                global historical_data
                 historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
             
             # Add to minute buffer if we have crowd data
@@ -1973,8 +2640,9 @@ def handle_crowd_video(data):
                         'timestamp': timestamp
                     })
     
-    # Emit with video_frame at top level for frontend
-    socketio.emit('crowd_video_update', video_frame_data)
+    # Video frame was already emitted above for immediate display
+    # Analysis results (if any) will be emitted separately via crowd_update event
+    print(f"[{datetime.now()}] Emitted crowd_video_update: frame={video_frame_base64 is not None}")
     
     # Generate and send Module 5 data based on current Modules 1-3 data
     # This ensures Module 5 gets updated when video frame data arrives
@@ -2001,7 +2669,6 @@ def handle_environment_data(data):
     print(f"[{datetime.now()}] Received Environment Data: {data}")
     current_data['environment'] = data
     
-<<<<<<< HEAD
     # Update module status
     module_id = data.get('module_id', 'unknown')
     update_module_status('environment', module_id, is_online=True)
@@ -2020,9 +2687,20 @@ def handle_environment_data(data):
     env_data_to_store = data.get('data', {}) if 'data' in data else data
     add_environment_entry(env_data_to_store, timestamp)
     
-    # Add to minute buffer for averaging
+    # Write directly to env.db
     if 'data' in data:
         env_data = data['data']
+        write_env_to_db({
+            'timestamp': timestamp.isoformat(),
+            'temperature_c': env_data.get('temperature_c'),
+            'humidity_percent': env_data.get('humidity_percent'),
+            'pressure_hpa': env_data.get('pressure_hpa'),
+            'uv_index': env_data.get('uv_index'),
+            'voc_level': env_data.get('voc_level'),
+            'comfort_score': env_data.get('comfort_score')
+        })
+        
+        # Also add to minute buffer for legacy averaging (if needed)
         add_to_buffer('module2_env', {
             'temperature_c': env_data.get('temperature_c'),
             'humidity_percent': env_data.get('humidity_percent'),
@@ -2138,8 +2816,18 @@ def handle_feedback_data(data):
     
     add_feedback_entry(data, timestamp)
     
-    # Track latest rating and timestamp if this is a rating interaction
+    # Write directly to rating.db
     feedback_data = data.get('data', {})
+    write_rating_to_db({
+        'timestamp': timestamp.isoformat(),
+        'rating': feedback_data.get('rating'),
+        'report_type': feedback_data.get('report_type'),
+        'question_text': feedback_data.get('question_text'),
+        'text_response': feedback_data.get('text_response'),
+        'issue_category': feedback_data.get('issue_category')
+    })
+    
+    # Track latest rating and timestamp if this is a rating interaction
     if feedback_data.get('report_type') == 'rating':
         rating = feedback_data.get('rating')
         if rating is not None:
@@ -2147,22 +2835,6 @@ def handle_feedback_data(data):
             module3_state['last_rating_timestamp'] = datetime.now().isoformat()
             save_module3_state()  # Persist state change
             print(f"[{datetime.now()}] Module 3: Latest rating updated to {rating}/5")
-            
-            # Save feedback immediately to database (not averaged)
-            timestamp_str = datetime.now().isoformat()
-            if USE_DATABASE:
-                try:
-                    conn = sqlite3.connect(HISTORY_DB)
-                    cursor = conn.cursor()
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO module3_feedback (timestamp, rating, report_type)
-                        VALUES (?, ?, ?)
-                    ''', (timestamp_str, rating, 'rating'))
-                    conn.commit()
-                    conn.close()
-                    print(f"[INFO] Saved Module 3 feedback to database: rating={rating}")
-                except Exception as e:
-                    print(f"[ERROR] Failed to save Module 3 feedback: {e}")
     
     # Calculate average rating from all feedback entries
     ratings = []
@@ -2857,7 +3529,6 @@ def test_disconnect():
             'count': len(connected_modules['display'])
         })
         print(f"[{datetime.now()}] Module 5 display disconnected: {module_id}")
-<<<<<<< HEAD
     else:
         # Try to find and mark other module types as offline
         # Note: We need to track socket_id to module_id mapping for non-display modules
@@ -2910,23 +3581,72 @@ def test_disconnect():
             'time_since_last_rating': time_since_last_rating
         })
         print(f"[{datetime.now()}] Module 3 (feedback) disconnected: {module_id} - Status set to idle")
->>>>>>> 5cbae18 (Add history system implementation)
 
 if __name__ == '__main__':
     import socket
-    # Print Anthropic client status on startup
+    # Print detection methods status on startup
     print("=" * 60)
-    print("SERVER STARTUP - Anthropic AI Status:")
+    print("SERVER STARTUP - People Detection Status:")
+    print("")
+    
+    # OpenCV Status
+    print("OpenCV Detection:")
+    if OPENCV_AVAILABLE:
+        print(f"  ✓ OpenCV library: INSTALLED")
+        if opencv_model_ready:
+            print(f"  ✓ MobileNet SSD model: LOADED")
+            print(f"  ✓ OpenCV detection: ENABLED")
+            print(f"  → Model supports {len(opencv_class_list)} classes")
+        else:
+            print(f"  ✗ MobileNet SSD model: NOT LOADED")
+            print(f"  ✗ OpenCV detection: DISABLED")
+            print(f"  → Reason: Model files not found in model_data/ directory")
+            print(f"  → See model_data/README.md for download instructions")
+    else:
+        print(f"  ✗ OpenCV library: NOT INSTALLED")
+        print(f"  ✗ OpenCV detection: DISABLED")
+        print(f"  → Install with: pip install opencv-python numpy")
+    
+    print("")
+    
+    # Claude AI Status
+    print("Claude AI Detection:")
     if anthropic_client:
-        print(f"  ✓ Anthropic client initialized successfully")
-        print(f"  ✓ AI image analysis: ENABLED")
+        print(f"  ✓ Anthropic client: INITIALIZED")
+        print(f"  ✓ Claude AI detection: ENABLED")
     else:
         print(f"  ✗ Anthropic client: NOT INITIALIZED")
-        print(f"  ✗ AI image analysis: DISABLED")
+        print(f"  ✗ Claude AI detection: DISABLED")
         if not ANTHROPIC_AVAILABLE:
             print(f"  → Reason: anthropic library not installed")
+            print(f"  → Install with: pip install anthropic")
         else:
             print(f"  → Reason: API key not found")
+            print(f"  → Set ANTHROPIC_API_KEY environment variable or add to .env file")
+    
+    print("")
+    
+    # Detection Method Selection
+    print("Detection Method Configuration:")
+    print(f"  → Selected method: {PEOPLE_DETECTION_METHOD.upper()}")
+    if PEOPLE_DETECTION_METHOD == 'opencv':
+        if opencv_model_ready:
+            print(f"  ✓ OpenCV will be used for automatic frame analysis")
+        else:
+            print(f"  ✗ WARNING: OpenCV selected but model not available!")
+    elif PEOPLE_DETECTION_METHOD == 'claude':
+        if anthropic_client:
+            print(f"  ✓ Claude AI will be used (manual analysis via /api/analyze_image)")
+            print(f"  → Note: Claude AI is not recommended for automatic frame analysis")
+            print(f"  → Use OpenCV for automatic detection on every frame")
+        else:
+            print(f"  ✗ WARNING: Claude selected but API key not available!")
+    elif PEOPLE_DETECTION_METHOD == 'none':
+        print(f"  ✗ WARNING: No detection method available!")
+        print(f"  → Install OpenCV model files or configure Claude API key")
+    elif PEOPLE_DETECTION_METHOD == 'auto':
+        print(f"  → Auto-detection selected (will use best available method)")
+    
     print("=" * 60)
     
     # Get the machine's hostname to determine IP
