@@ -96,6 +96,9 @@
         grid-template-columns: 1fr;
       }
     }
+    @media (max-width: 600px) {
+      .wrap{ padding: var(--s12); gap: var(--s12); }
+    }
 
     /* Cards - Borders-only approach (no shadows) */
     .card {
@@ -191,6 +194,22 @@
     }
     @media (max-width: 900px){
       .kpis{ grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+    }
+    @media (max-width: 600px){
+      .header{ padding: var(--s12) var(--s16); }
+      .headerRow{ flex-direction: column; align-items: stretch; gap: var(--s12); }
+      .headerRow > div:last-child{ display: flex; flex-wrap: wrap; align-items: center; gap: var(--s8); }
+      .brand h1{ font-size: 18px; }
+      .metaRow{ flex-wrap: wrap; gap: var(--s8); }
+      .pill{ font-size: 10px; padding: var(--s4) var(--s6); }
+      .kpis{ grid-template-columns: repeat(2, 1fr); gap: var(--s8); margin-top: var(--s12); }
+      .kpi{ padding: var(--s12); }
+      .kpiLabel{ font-size: 10px; }
+      .kpiValue{ font-size: 16px; }
+      .logout-btn{ padding: var(--s6) var(--s12); font-size: 12px; }
+    }
+    @media (max-width: 380px){
+      .kpis{ grid-template-columns: 1fr; }
     }
     .kpi{
       padding: var(--s16);
@@ -552,12 +571,20 @@
     .logTime{ color: var(--textFaint); margin-right: var(--s8); font-variant-numeric: tabular-nums; }
 
     /* Charts (fix infinite growth by hard-sizing containers) */
+    /* Charts - single column stack */
     .chartsGrid{
       display:grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: var(--s16);
     }
-    @media (max-width: 900px){ .chartsGrid{ grid-template-columns: 1fr; } }
+    @media (max-width: 600px){
+      .chartsGrid{ gap: var(--s12); }
+      .chartBox{ height: 260px; padding: var(--s12); }
+      .chartTitle{ font-size: 11px; margin-bottom: var(--s8); }
+    }
+    @media (max-width: 380px){
+      .chartBox{ height: 220px; padding: var(--s8); }
+    }
     .chartBox{
       border: 0.5px solid var(--borderSubtle);
       border-radius: var(--r8);
@@ -869,7 +896,7 @@
         </div>
         <span class="badge muted">Chart.js</span>
       </div>
-      <div class="chartsGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+      <div class="chartsGrid">
         <div class="chartBox">
           <div class="chartTitle">Crowd - Last 12 Hours (all entries)</div>
           <div class="chartStage">
@@ -898,6 +925,12 @@
           <div class="chartTitle">Ratings - Distribution</div>
           <div class="chartStage">
             <canvas id="chart-rating-dist"></canvas>
+          </div>
+        </div>
+        <div class="chartBox">
+          <div class="chartTitle">Rating (last 24h)</div>
+          <div class="chartStage">
+            <canvas id="chart-rating-24h"></canvas>
           </div>
         </div>
       </div>
@@ -931,7 +964,8 @@
         crowdWeekly: null, 
         envRecent: null, 
         envWeekly: null,
-        ratingDist: null
+        ratingDist: null,
+        rating24h: null
       },
       ratingDistribution: null,  // Store latest rating distribution data
       module3: {
@@ -1177,7 +1211,7 @@
     }
 
     function setModuleStatus(id, mode, source){
-      // mode: "idle" | "active" | "mock"
+      // mode: "idle" | "active" | "mock" | "connected" (feedback module connected but no recent data)
       const el = document.getElementById(id);
       el.classList.add("badge");
       const src = source ? ` · ${source}` : "";
@@ -1195,6 +1229,14 @@
         el.style.borderColor = "rgba(37,99,235,0.22)";
         el.style.background = "rgba(37,99,235,0.08)";
         el.style.color = "var(--accent)";
+        return;
+      }
+
+      if(mode === "connected"){
+        el.textContent = "Connected";
+        el.style.borderColor = "rgba(22,163,74,0.22)";
+        el.style.background = "rgba(22,163,74,0.08)";
+        el.style.color = "var(--success)";
         return;
       }
 
@@ -1613,6 +1655,49 @@
         console.error("Error loading rating distribution chart:", error);
       }
     }
+
+    async function loadRating24hChart() {
+      if(!state.charts.rating24h) return;
+      try {
+        const response = await fetch('/api/charts/rating?days=1&limit=500');
+        if(!response.ok) return;
+        const result = await response.json();
+        if(!result.data || result.data.length === 0) {
+          state.charts.rating24h.data.labels = [];
+          state.charts.rating24h.data.datasets[0].data = [];
+          state.charts.rating24h.update("none");
+          return;
+        }
+        const now = new Date();
+        const startOf24h = now.getTime() - 24 * 60 * 60 * 1000;
+        const buckets = [];
+        const labels = [];
+        for(let i = 0; i < 24; i++) {
+          const t = new Date(startOf24h + i * 60 * 60 * 1000);
+          buckets.push({ sum: 0, count: 0 });
+          const h = t.getHours();
+          const ampm = h >= 12 ? "PM" : "AM";
+          const h12 = (h % 12) || 12;
+          labels.push(`${h12}${ampm}`);
+        }
+        result.data.forEach(entry => {
+          const r = Number(entry.rating);
+          if(isNaN(r) || entry.timestamp == null) return;
+          const ts = new Date(entry.timestamp.replace("Z", "+00:00")).getTime();
+          const bucketIndex = Math.floor((ts - startOf24h) / (60 * 60 * 1000));
+          if(bucketIndex >= 0 && bucketIndex < 24) {
+            buckets[bucketIndex].sum += r;
+            buckets[bucketIndex].count += 1;
+          }
+        });
+        const values = buckets.map(b => b.count > 0 ? Math.round((b.sum / b.count) * 10) / 10 : null);
+        state.charts.rating24h.data.labels = labels;
+        state.charts.rating24h.data.datasets[0].data = values;
+        state.charts.rating24h.update("none");
+      } catch(e) {
+        console.warn("Error loading rating 24h chart:", e);
+      }
+    }
     
     async function loadAllCharts() {
       console.log("=== LOADING ALL CHARTS FROM DATABASES ===");
@@ -1621,7 +1706,8 @@
         loadCrowdWeeklyChart(),
         loadEnvRecentChart(),
         loadEnvWeeklyChart(),
-        loadRatingDistChart()
+        loadRatingDistChart(),
+        loadRating24hChart()
       ]);
       console.log("=== ALL CHARTS LOADED ===");
     }
@@ -1635,6 +1721,7 @@
       const envRecent = document.getElementById("chart-env-recent");
       const envWeekly = document.getElementById("chart-env-weekly");
       const ratingDist = document.getElementById("chart-rating-dist");
+      const rating24h = document.getElementById("chart-rating-24h");
 
       if(crowdHourly) {
         state.charts.crowdHourly = new Chart(crowdHourly, {
@@ -1774,6 +1861,35 @@
                 position: 'right', 
                 labels: { font: { size: 11 } } 
               } 
+            }
+          }
+        });
+      }
+
+      if(rating24h) {
+        state.charts.rating24h = new Chart(rating24h, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [{
+              label: "Avg rating",
+              data: [],
+              borderColor: "#10b981",
+              backgroundColor: "rgba(16,185,129,0.15)",
+              fill: true,
+              tension: 0.35,
+              pointRadius: 3,
+              pointHoverRadius: 5
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: true } },
+            scales: {
+              y: { beginAtZero: true, min: 0, max: 6, ticks: { stepSize: 1 } },
+              x: { ticks: { maxRotation: 45, minRotation: 45, maxTicksLimit: 24 } }
             }
           }
         });
@@ -2551,7 +2667,8 @@
 
         const m3 = state.health.m3;
         if(m3.lastSeen && (now - m3.lastSeen) > staleMs) { m3.mode = "idle"; }
-        setModuleStatus("m3-status", m3.mode, m3.mode === "idle" ? null : (m3.mode === "mock" ? "simulated" : "data"));
+        const m3Display = (m3.mode === "idle" && state.connectedModules.feedback.length > 0) ? "connected" : m3.mode;
+        setModuleStatus("m3-status", m3Display, m3Display === "connected" || m3Display === "idle" ? null : (m3Display === "mock" ? "simulated" : "data"));
 
         // Module 5: only indicates dashboard is receiving display payloads; timeout to Waiting.
         const m5 = state.health.m5;
