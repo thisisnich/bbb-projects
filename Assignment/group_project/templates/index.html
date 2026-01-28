@@ -1036,6 +1036,21 @@
       document.getElementById("kpi-m3").textContent = String(state.connectedModules.feedback.length || 0);
     }
 
+    function syncModuleStatusFromApi(){
+      fetch("/api/module_status").then(r => r.json()).then(data => {
+        if(data && data.connected_modules){
+          const cm = data.connected_modules;
+          state.connectedModules.crowd_detection = Array.isArray(cm.crowd_detection) ? cm.crowd_detection : [];
+          state.connectedModules.environment = Array.isArray(cm.environment) ? cm.environment : [];
+          state.connectedModules.feedback = Array.isArray(cm.feedback) ? cm.feedback : [];
+          updateKpis();
+          const m3 = state.health.m3;
+          const m3Display = (m3.mode === "idle" && state.connectedModules.feedback.length > 0) ? "connected" : m3.mode;
+          setModuleStatus("m3-status", m3Display, m3Display === "connected" || m3Display === "idle" ? null : (m3Display === "mock" ? "simulated" : "data"));
+        }
+      }).catch(() => {});
+    }
+
     function updateGauge(occupancy){
       const pct = Math.max(0, Math.min(1, Number(occupancy || 0)));
       const deg = Math.round(pct * 360);
@@ -2757,6 +2772,9 @@
       
       setDot("dot-m5", "offline");
       document.getElementById("dbg-m5").textContent = "—";
+
+      // Sync connected modules from server (dashboard may load after modules already connected)
+      syncModuleStatusFromApi();
 
       // Mock mode selects moved to /debug page
 
