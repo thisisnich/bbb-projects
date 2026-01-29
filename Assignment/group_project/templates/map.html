@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Court Map - Smart Sports Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+    body { display: flex; }
+    #sidebar {
+      width: 300px;
+      min-width: 260px;
+      background: #fff;
+      border-right: 1px solid rgba(0,0,0,0.12);
+      padding: 20px;
+      overflow-y: auto;
+    }
+    #sidebar h3 { font-size: 18px; font-weight: 600; color: #0a0a0a; margin-bottom: 16px; }
+    #sidebar a.back { display: inline-block; margin-bottom: 16px; font-size: 13px; color: #2563eb; text-decoration: none; }
+    #sidebar a.back:hover { text-decoration: underline; }
+    .location-item {
+      padding: 14px;
+      margin-bottom: 10px;
+      background: #fafafa;
+      border-radius: 8px;
+      cursor: pointer;
+      border-left: 3px solid #2563eb;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .location-item:hover { background: #f0f4ff; transform: translateX(4px); }
+    .location-item .name { font-weight: 600; color: #0a0a0a; font-size: 14px; }
+    .location-item .meta { font-size: 12px; color: #737373; margin-top: 4px; }
+    .empty-msg { font-size: 13px; color: #737373; padding: 20px 0; }
+    #map { flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <a href="/" class="back">&larr; Back to dashboard</a>
+    <h3>Court &amp; module locations</h3>
+    <div id="location-list"></div>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    (function () {
+      const defaultLat = {{ default_lat }};
+      const defaultLon = {{ default_lon }};
+      const map = L.map('map').setView([defaultLat, defaultLon], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      const markers = [];
+      let locations = [];
+
+      function renderSidebar(locsWithCoords) {
+        const list = document.getElementById('location-list');
+        if (!locsWithCoords.length) {
+          list.innerHTML = '<p class="empty-msg">Connect modules to see court locations. Locations are inferred from device IP when possible.</p>';
+          return;
+        }
+        list.innerHTML = locsWithCoords.map(function (loc, i) {
+          const name = loc.court_id !== 'unknown' ? loc.court_id : loc.module_id;
+          const meta = loc.module_type + (loc.city ? ' &middot; ' + loc.city : '');
+          return '<div class="location-item" onclick="focusLocation(' + i + ')"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div>';
+        }).join('');
+      }
+
+      function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      window.focusLocation = function (index) {
+        if (index < 0 || index >= markers.length) return;
+        const marker = markers[index];
+        const pos = marker.getLatLng();
+        map.flyTo([pos.lat, pos.lng], 16, { duration: 1 });
+        marker.openPopup();
+      };
+
+      function loadLocations() {
+        fetch('/api/module_locations')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            locations = data.locations || [];
+            const defaultLat2 = data.default_lat != null ? data.default_lat : defaultLat;
+            const defaultLon2 = data.default_lon != null ? data.default_lon : defaultLon;
+
+            markers.forEach(function (m) { map.removeLayer(m); });
+            markers.length = 0;
+
+            if (locations.length === 0) {
+              map.setView([defaultLat2, defaultLon2], 14);
+              const defaultMarker = L.marker([defaultLat2, defaultLon2]).addTo(map);
+              defaultMarker.bindPopup('<b>Venue</b><br>Connect modules to see court locations.');
+              markers.push(defaultMarker);
+              renderSidebar([]);
+            } else {
+              const locsWithCoords = locations.filter(function (l) { return l.lat != null && l.lon != null; });
+              locsWithCoords.forEach(function (loc) {
+                const lat = loc.lat, lon = loc.lon;
+                const label = loc.court_id !== 'unknown' ? loc.court_id : loc.module_id;
+                const popup = '<b>' + escapeHtml(label) + '</b><br>' + escapeHtml(loc.module_type) + '<br>Module: ' + escapeHtml(loc.module_id) + (loc.city ? '<br>' + escapeHtml(loc.city) : '');
+                const marker = L.marker([lat, lon]).addTo(map);
+                marker.bindPopup(popup);
+                markers.push(marker);
+              });
+              if (locsWithCoords.length) map.setView([locsWithCoords[0].lat, locsWithCoords[0].lon], 15);
+              renderSidebar(locsWithCoords);
+            }
+          })
+          .catch(function (err) {
+            console.error('Failed to load module locations:', err);
+            document.getElementById('location-list').innerHTML = '<p class="empty-msg">Could not load locations.</p>';
+            markers.length = 0;
+          });
+      }
+
+      loadLocations();
+      setInterval(loadLocations, 15000);
+    })();
+  </script>
+</body>
+</html>

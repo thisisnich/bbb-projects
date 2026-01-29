@@ -1,9 +1,9 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response
 from functools import wraps
 import eventlet
 from eventlet import wsgi
 from flask_socketio import SocketIO, emit
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import random
 import threading
@@ -11,9 +11,23 @@ import time
 import base64
 import os
 import sys
+import urllib.request
 from collections import defaultdict
 import sqlite3
 from statistics import mean
+
+# Timestamps: store and send UTC with 'Z' suffix; frontend displays in user's local time (e.g. Singapore +8)
+def utc_iso():
+    """Current time as ISO string in UTC with 'Z' suffix (for storage and API)."""
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+def to_utc_iso(dt):
+    """Convert datetime to UTC ISO string with 'Z' suffix. Naive datetimes treated as UTC."""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
+    else:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat().replace('+00:00', 'Z')
 
 # AI Image Recognition (Claude API)
 ANTHROPIC_AVAILABLE = False
@@ -221,6 +235,7 @@ USE_DATABASE = True  # Set to False to use JSON files instead
 CROWD_DB = os.path.join(os.path.dirname(__file__), 'crowd.db')
 ENV_DB = os.path.join(os.path.dirname(__file__), 'env.db')
 RATING_DB = os.path.join(os.path.dirname(__file__), 'rating.db')
+LOGS_DB = os.path.join(os.path.dirname(__file__), 'logs.db')
 
 # Minute-based averaging buffers (collect data for 1 minute, then save average)
 minute_buffers = {
@@ -256,6 +271,9 @@ def init_database():
             )
         ''')
         cursor_crowd.execute('CREATE INDEX IF NOT EXISTS idx_crowd_timestamp ON crowd_data(timestamp)')
+        cursor_crowd.execute('''CREATE TABLE IF NOT EXISTS crowd_daily (date TEXT PRIMARY KEY, avg_people REAL, avg_noise REAL, max_people INTEGER, count INTEGER)''')
+        cursor_crowd.execute('''CREATE TABLE IF NOT EXISTS crowd_weekly (week_start TEXT PRIMARY KEY, avg_people REAL, avg_noise REAL, max_people INTEGER, count INTEGER)''')
+        cursor_crowd.execute('''CREATE TABLE IF NOT EXISTS crowd_monthly (month_start TEXT PRIMARY KEY, avg_people REAL, avg_noise REAL, max_people INTEGER, count INTEGER)''')
         conn_crowd.commit()
         conn_crowd.close()
         print(f"[INFO] Crowd database initialized: {CROWD_DB}")
@@ -276,6 +294,9 @@ def init_database():
             )
         ''')
         cursor_env.execute('CREATE INDEX IF NOT EXISTS idx_env_timestamp ON env_data(timestamp)')
+        cursor_env.execute('''CREATE TABLE IF NOT EXISTS env_daily (date TEXT PRIMARY KEY, avg_temp REAL, avg_humidity REAL, avg_comfort REAL, count INTEGER)''')
+        cursor_env.execute('''CREATE TABLE IF NOT EXISTS env_weekly (week_start TEXT PRIMARY KEY, avg_temp REAL, avg_humidity REAL, avg_comfort REAL, count INTEGER)''')
+        cursor_env.execute('''CREATE TABLE IF NOT EXISTS env_monthly (month_start TEXT PRIMARY KEY, avg_temp REAL, avg_humidity REAL, avg_comfort REAL, count INTEGER)''')
         conn_env.commit()
         conn_env.close()
         print(f"[INFO] Environment database initialized: {ENV_DB}")
@@ -295,6 +316,9 @@ def init_database():
             )
         ''')
         cursor_rating.execute('CREATE INDEX IF NOT EXISTS idx_rating_timestamp ON rating_data(timestamp)')
+        cursor_rating.execute('''CREATE TABLE IF NOT EXISTS rating_daily (date TEXT PRIMARY KEY, avg_rating REAL, count INTEGER)''')
+        cursor_rating.execute('''CREATE TABLE IF NOT EXISTS rating_weekly (week_start TEXT PRIMARY KEY, avg_rating REAL, count INTEGER)''')
+        cursor_rating.execute('''CREATE TABLE IF NOT EXISTS rating_monthly (month_start TEXT PRIMARY KEY, avg_rating REAL, count INTEGER)''')
         conn_rating.commit()
         conn_rating.close()
         print(f"[INFO] Rating database initialized: {RATING_DB}")
@@ -359,18 +383,112 @@ def init_database():
         conn.commit()
         conn.close()
         print(f"[INFO] Legacy database initialized: {HISTORY_DB}")
+        try:
+            conn_logs = sqlite3.connect(LOGS_DB)
+            cur = conn_logs.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, source TEXT)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(timestamp)")
+            cur.execute("CREATE TABLE IF NOT EXISTS connection_state (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, module_id TEXT NOT NULL, module_type TEXT NOT NULL, event TEXT NOT NULL, metadata TEXT)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_cs_ts ON connection_state(timestamp)")
+            conn_logs.commit()
+            conn_logs.close()
+            print(f"[INFO] Logs database initialized: {LOGS_DB}")
+        except Exception as le:
+            print(f"[WARNING] Logs DB init: {le}")
     except Exception as e:
         print(f"[ERROR] Failed to initialize database: {e}")
         import traceback
         traceback.print_exc()
+
+def write_log(level, message, source='server'):
+    """Write a log entry to logs.db for dashboard to read."""
+    if not USE_DATABASE:
+        return
+    try:
+        conn = sqlite3.connect(LOGS_DB)
+        conn.execute('INSERT INTO logs (timestamp, level, message, source) VALUES (?, ?, ?, ?)',
+                     (utc_iso(), level, str(message)[:4096], source))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[WARNING] write_log: {e}")
+
+def write_connection_state(module_id, module_type, event_type, metadata=None):
+    """Write connection/disconnection event to logs.db for dashboard."""
+    if not USE_DATABASE:
+        return
+    try:
+        conn = sqlite3.connect(LOGS_DB)
+        conn.execute('INSERT INTO connection_state (timestamp, module_id, module_type, event, metadata) VALUES (?, ?, ?, ?, ?)',
+                     (utc_iso(), module_id, module_type, event_type, json.dumps(metadata) if metadata else None))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[WARNING] write_connection_state: {e}")
+
+def run_rollups_and_retention():
+    """Roll up raw data to daily/weekly/monthly; keep 1 week raw, 3 months weekly."""
+    if not USE_DATABASE:
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff_7d = (now - timedelta(days=7)).isoformat().replace('+00:00', 'Z')[:19]
+        cutoff_3m = (now - timedelta(days=90)).isoformat()[:10]
+        cutoff_3m_week = (now - timedelta(days=90)).strftime('%Y-%m-%d')
+
+        conn = sqlite3.connect(CROWD_DB)
+        cur = conn.cursor()
+        cur.execute('''INSERT OR REPLACE INTO crowd_daily (date, avg_people, avg_noise, max_people, count)
+            SELECT substr(timestamp, 1, 10) d, AVG(people_count), AVG(noise_db), MAX(people_count), COUNT(*)
+            FROM crowd_data WHERE substr(timestamp, 1, 10) < date('now') GROUP BY d''')
+        cur.execute('''INSERT OR REPLACE INTO crowd_weekly (week_start, avg_people, avg_noise, max_people, count)
+            SELECT date(date || ' 12:00:00', 'weekday 0') w, AVG(avg_people), AVG(avg_noise), MAX(max_people), SUM(count)
+            FROM crowd_daily GROUP BY w''')
+        cur.execute('''INSERT OR REPLACE INTO crowd_monthly (month_start, avg_people, avg_noise, max_people, count)
+            SELECT substr(date, 1, 7) m, AVG(avg_people), AVG(avg_noise), MAX(max_people), SUM(count)
+            FROM crowd_daily GROUP BY m''')
+        cur.execute('DELETE FROM crowd_data WHERE timestamp < ?', (cutoff_7d,))
+        cur.execute('DELETE FROM crowd_weekly WHERE week_start < ?', (cutoff_3m_week,))
+        conn.commit()
+        conn.close()
+
+        conn = sqlite3.connect(ENV_DB)
+        cur = conn.cursor()
+        cur.execute('''INSERT OR REPLACE INTO env_daily (date, avg_temp, avg_humidity, avg_comfort, count)
+            SELECT substr(timestamp, 1, 10) d, AVG(temperature_c), AVG(humidity_percent), AVG(comfort_score), COUNT(*)
+            FROM env_data WHERE substr(timestamp, 1, 10) < date('now') GROUP BY d''')
+        cur.execute('''INSERT OR REPLACE INTO env_weekly (week_start, avg_temp, avg_humidity, avg_comfort, count)
+            SELECT date(date || ' 12:00:00', 'weekday 0') w, AVG(avg_temp), AVG(avg_humidity), AVG(avg_comfort), SUM(count)
+            FROM env_daily GROUP BY w''')
+        cur.execute('''INSERT OR REPLACE INTO env_monthly (month_start, avg_temp, avg_humidity, avg_comfort, count)
+            SELECT substr(date, 1, 7) m, AVG(avg_temp), AVG(avg_humidity), AVG(avg_comfort), SUM(count)
+            FROM env_daily GROUP BY m''')
+        cur.execute('DELETE FROM env_data WHERE timestamp < ?', (cutoff_7d,))
+        cur.execute('DELETE FROM env_weekly WHERE week_start < ?', (cutoff_3m_week,))
+        conn.commit()
+        conn.close()
+
+        conn = sqlite3.connect(RATING_DB)
+        cur = conn.cursor()
+        cur.execute('''INSERT OR REPLACE INTO rating_daily (date, avg_rating, count)
+            SELECT substr(timestamp, 1, 10) d, AVG(rating), COUNT(*) FROM rating_data WHERE report_type = 'rating' AND substr(timestamp, 1, 10) < date('now') GROUP BY d''')
+        cur.execute('''INSERT OR REPLACE INTO rating_weekly (week_start, avg_rating, count)
+            SELECT date(date || ' 12:00:00', 'weekday 0') w, AVG(avg_rating), SUM(count) FROM rating_daily GROUP BY w''')
+        cur.execute('''INSERT OR REPLACE INTO rating_monthly (month_start, avg_rating, count)
+            SELECT substr(date, 1, 7) m, AVG(avg_rating), SUM(count) FROM rating_daily GROUP BY m''')
+        cur.execute('DELETE FROM rating_data WHERE timestamp < ?', (cutoff_7d,))
+        cur.execute('DELETE FROM rating_weekly WHERE week_start < ?', (cutoff_3m_week,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[WARNING] run_rollups_and_retention: {e}")
 
 def save_minute_averages():
     """Save averaged data from minute buffers to database/JSON"""
     global minute_buffers
     
     with buffer_lock:
-        now = datetime.now()
-        timestamp_str = now.isoformat()
+        timestamp_str = utc_iso()
         
         # Module 1: Crowd + Audio
         if minute_buffers['module1_crowd']:
@@ -393,7 +511,7 @@ def save_minute_averages():
             else:
                 # Fallback to JSON for Module 1 crowd (backward compatibility)
                 global historical_data
-                historical_data = update_history(avg_people, now)
+                historical_data = update_history(avg_people, datetime.now(timezone.utc))
             
             # Save audio separately
             if avg_noise is not None and minute_buffers['module1_audio']:
@@ -454,7 +572,7 @@ def write_crowd_to_db(data_dict):
             (timestamp, people_count, noise_db, crowd_level, confidence, motion_detected, proximity_triggered)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('timestamp', utc_iso()),
             data_dict.get('people_count'),
             data_dict.get('noise_db'),
             data_dict.get('crowd_level'),
@@ -477,7 +595,7 @@ def write_env_to_db(data_dict):
             (timestamp, temperature_c, humidity_percent, pressure_hpa, uv_index, voc_level, comfort_score)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('timestamp', utc_iso()),
             data_dict.get('temperature_c'),
             data_dict.get('humidity_percent'),
             data_dict.get('pressure_hpa'),
@@ -500,7 +618,7 @@ def write_rating_to_db(data_dict):
             (timestamp, rating, report_type, question_text, text_response, issue_category)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', datetime.now().isoformat()),
+            data_dict.get('timestamp', utc_iso()),
             data_dict.get('rating'),
             data_dict.get('report_type'),
             data_dict.get('question_text'),
@@ -528,6 +646,19 @@ def start_minute_averaging_thread():
     thread = threading.Thread(target=averaging_loop, daemon=True)
     thread.start()
     print("[INFO] Minute-based averaging thread started")
+
+def start_rollups_retention_thread():
+    """Background: roll up to daily/weekly/monthly; retain 1 week raw, 3 months weekly."""
+    def loop():
+        while True:
+            time.sleep(3600)
+            try:
+                run_rollups_and_retention()
+            except Exception as e:
+                print(f"[WARNING] rollups/retention: {e}")
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    print("[INFO] Rollups and retention thread started (hourly)")
 
 def get_history_from_db(module, start_date=None, end_date=None, limit=1000):
     """Query historical data from database
@@ -728,21 +859,28 @@ def save_connection_history(data):
 def add_crowd_entry(people_count, timestamp=None, full_data=None):
     """Add a new crowd data entry to history"""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     history = load_crowd_history()
     if 'entries' not in history:
         history['entries'] = []
     
-    timestamp_str = timestamp.isoformat()
+    timestamp_str = to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso())
     
     # Check if we should add this reading (avoid duplicates from rapid polling)
     # Only add if people_count changed by at least 1, or if last entry is more than 5 minutes old
     should_add = True
     if len(history['entries']) > 0:
         last_entry = history['entries'][-1]
-        last_timestamp = datetime.fromisoformat(last_entry.get('timestamp', ''))
-        time_diff = (timestamp - last_timestamp).total_seconds()
+        ts_str = last_entry.get('timestamp', '').replace('Z', '+00:00')
+        last_timestamp = datetime.fromisoformat(ts_str) if ts_str else datetime.now(timezone.utc)
+        current_dt = timestamp if hasattr(timestamp, 'tzinfo') else datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        # Ensure both are timezone-aware so subtraction doesn't raise TypeError
+        if last_timestamp.tzinfo is None:
+            last_timestamp = last_timestamp.replace(tzinfo=timezone.utc)
+        if current_dt.tzinfo is None:
+            current_dt = current_dt.replace(tzinfo=timezone.utc)
+        time_diff = (current_dt - last_timestamp).total_seconds()
         people_diff = abs(last_entry.get('people_count', 0) - people_count)
         
         # Add if significant change (>1 person) or if enough time has passed (>5 minutes)
@@ -764,13 +902,13 @@ def add_crowd_entry(people_count, timestamp=None, full_data=None):
 def add_environment_entry(env_data, timestamp=None):
     """Add a new environment data entry to history"""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     history = load_environment_history()
     if 'entries' not in history:
         history['entries'] = []
     
-    timestamp_str = timestamp.isoformat()
+    timestamp_str = to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso())
     
     # Always add environment data (less frequent updates)
     entry = {
@@ -785,13 +923,13 @@ def add_environment_entry(env_data, timestamp=None):
 def add_feedback_entry(feedback_data, timestamp=None):
     """Add a new feedback data entry to history"""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     history = load_feedback_history()
     if 'entries' not in history:
         history['entries'] = []
     
-    timestamp_str = timestamp.isoformat()
+    timestamp_str = to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso())
     
     # Always add feedback data (user interactions are important)
     entry = {
@@ -806,20 +944,23 @@ def add_feedback_entry(feedback_data, timestamp=None):
 def add_connection_event(module_id, module_type, event_type, timestamp=None):
     """Add a connection/disconnection event to history"""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     history = load_connection_history()
     if 'connections' not in history:
         history['connections'] = []
     
+    ts_str = to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso())
     entry = {
         'module_id': module_id,
         'module_type': module_type,
         'event': event_type,  # 'connected' or 'disconnected'
-        'timestamp': timestamp.isoformat()
+        'timestamp': ts_str
     }
     history['connections'].append(entry)
     save_connection_history(history)
+    write_connection_state(module_id, module_type, event_type)
+    write_log('INFO', f'Module {module_id} ({module_type}) {event_type}', 'connection')
     
     return history
 
@@ -827,6 +968,30 @@ def add_connection_event(module_id, module_type, event_type, timestamp=None):
 def load_history():
     """Legacy function - loads crowd history for backward compatibility"""
     return load_crowd_history()
+
+def get_crowd_history_last_hours(hours=12):
+    """Return crowd history filtered to the last N hours (for Module 5 historical data)."""
+    history = load_crowd_history()
+    entries = history.get('entries', [])
+    if hours <= 0 or not entries:
+        return {'entries': entries}
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    filtered = []
+    for entry in entries:
+        ts_str = entry.get('timestamp', '').replace('Z', '+00:00')
+        if not ts_str:
+            continue
+        try:
+            entry_dt = datetime.fromisoformat(ts_str)
+            if entry_dt.tzinfo is None:
+                entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+            else:
+                entry_dt = entry_dt.astimezone(timezone.utc)
+            if entry_dt >= cutoff:
+                filtered.append(entry)
+        except (ValueError, TypeError):
+            continue
+    return {'entries': filtered}
 
 def update_history(people_count, timestamp=None):
     """Legacy function - updates crowd history for backward compatibility"""
@@ -906,7 +1071,7 @@ def update_module_status(module_type, module_id, is_online=True):
         module_status[module_type][module_id] = {}
     
     module_status[module_type][module_id]['online'] = is_online
-    module_status[module_type][module_id]['last_seen'] = datetime.now().isoformat()
+    module_status[module_type][module_id]['last_seen'] = utc_iso()
     
     return module_status[module_type][module_id]
 
@@ -1031,6 +1196,11 @@ else:
 
 # Start minute-based averaging thread
 start_minute_averaging_thread()
+start_rollups_retention_thread()
+try:
+    run_rollups_and_retention()
+except Exception:
+    pass
 
 # --- Data Storage ---
 connected_modules = {
@@ -1054,6 +1224,71 @@ module_status = {
 # Track which socket IDs are feedback modules (Module 3)
 feedback_module_sockets = {}  # {socket_id: module_id}
 
+# Module locations for /map page: {module_id: {ip, lat, lon, city, module_type, court_id, last_updated}}
+module_locations = {}
+# Cache geolocation by IP to avoid repeated API calls
+ip_geolocation_cache = {}  # {ip: {lat, lon, city}}
+
+# Default map center when IP is private or geolocation fails (e.g. venue)
+DEFAULT_MAP_LAT = float(os.environ.get('DEFAULT_MAP_LAT', '1.3788'))
+DEFAULT_MAP_LON = float(os.environ.get('DEFAULT_MAP_LON', '103.8489'))
+
+def is_private_ip(ip):
+    """Return True if ip is private (not geolocatable via public API)."""
+    if not ip or ip in ('127.0.0.1', '::1'):
+        return True
+    parts = ip.split('.')
+    if len(parts) == 4:
+        try:
+            a, b = int(parts[0]), int(parts[1])
+            if a == 10:
+                return True
+            if a == 172 and 16 <= b <= 31:
+                return True
+            if a == 192 and b == 168:
+                return True
+        except ValueError:
+            pass
+    return False
+
+def fetch_geolocation_for_ip(ip, timeout=2.0):
+    """Return {lat, lon, city} for a public IP, or None on failure. Uses ip-api.com (no key)."""
+    if ip in ip_geolocation_cache:
+        return ip_geolocation_cache[ip]
+    url = f'http://ip-api.com/json/{ip}?fields=status,lat,lon,city'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'SmartSportsDashboard/1.0'})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get('status') == 'success' and 'lat' in data and 'lon' in data:
+                result = {'lat': data['lat'], 'lon': data['lon'], 'city': data.get('city', '')}
+                ip_geolocation_cache[ip] = result
+                return result
+    except Exception as e:
+        print(f"[{datetime.now()}] Geolocation for {ip} failed: {e}")
+    return None
+
+def update_module_location(module_id, module_type, court_id, ip):
+    """Update module_locations with IP and resolved lat/lon (geolocation or default)."""
+    global module_locations
+    if is_private_ip(ip):
+        lat, lon, city = DEFAULT_MAP_LAT, DEFAULT_MAP_LON, 'Venue'
+    else:
+        geo = fetch_geolocation_for_ip(ip)
+        if geo:
+            lat, lon, city = geo['lat'], geo['lon'], geo.get('city', '')
+        else:
+            lat, lon, city = DEFAULT_MAP_LAT, DEFAULT_MAP_LON, 'Unknown'
+    module_locations[module_id] = {
+        'ip': ip,
+        'lat': lat,
+        'lon': lon,
+        'city': city,
+        'module_type': module_type,
+        'court_id': court_id or 'unknown',
+        'last_updated': utc_iso()
+    }
+
 # Current data from each module type
 current_data = {
     'crowd': None,
@@ -1064,6 +1299,11 @@ current_data = {
 # Track last analysis time for throttling OpenCV analysis (per module)
 last_opencv_analysis_time = {}  # {module_id: timestamp}
 ANALYSIS_INTERVAL = 5.0  # Analyze every 5 seconds
+
+# Throttle video frame emit: keep only latest frame, emit at fixed interval (avoids client socket backlog)
+last_video_emit_time = 0.0
+latest_video_frame_data = None  # Single buffer; new frames overwrite (old discarded)
+VIDEO_EMIT_INTERVAL = 0.5  # Emit at most 2 fps (500ms) so client stays connected
 
 # Module 3 specific tracking (loaded from persistent storage)
 module3_state = module_states.get('module3_state', {
@@ -1115,7 +1355,7 @@ def generate_mock_crowd_data(scenario='normal'):
     return {
         'module_id': 'mock_module1',
         'module_type': 'crowd_detection',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': utc_iso(),
         'data': {
             'people_count': people_count,
             'crowd_level': level,
@@ -1172,7 +1412,7 @@ def generate_mock_environment_data(scenario='normal'):
     return {
         'module_id': 'mock_module2',
         'module_type': 'environment',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': utc_iso(),
         'data': {
             'temperature_c': temp,
             'humidity_percent': humidity,
@@ -1208,7 +1448,7 @@ def generate_mock_feedback_data(scenario='normal'):
         return {
             'module_id': 'mock_module3',
             'module_type': 'feedback',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'data': {
                 'report_type': 'rating',
                 'question_text': random.choice(questions),
@@ -1226,7 +1466,7 @@ def generate_mock_feedback_data(scenario='normal'):
         return {
             'module_id': 'mock_module3',
             'module_type': 'feedback',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'data': {
                 'report_type': 'text',
                 'question_text': random.choice(questions),
@@ -1340,6 +1580,11 @@ def module1_test():
 @app.route('/debug')
 def debug_page():
     return render_template('debug.html')
+
+@app.route('/map')
+def map_page():
+    """Full-page map showing where modules/courts are located."""
+    return render_template('map.html', default_lat=DEFAULT_MAP_LAT, default_lon=DEFAULT_MAP_LON)
 
 def detect_people_opencv(image_base64: str) -> dict:
     """
@@ -1624,7 +1869,7 @@ def analyze_image():
         crowd_data = {
             'module_id': 'ai_image_analysis',
             'module_type': 'crowd_detection',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'data': {
                 'people_count': people_count,
                 'crowd_level': crowd_level,
@@ -1632,7 +1877,7 @@ def analyze_image():
                 'source': use_method
             },
             '_ai_analysis': True,  # Flag to mark this as AI analysis data
-            '_ai_timestamp': datetime.now().isoformat(),  # Store timestamp for comparison
+            '_ai_timestamp': utc_iso(),  # Store timestamp for comparison
             '_detection_method': use_method
         }
         
@@ -1683,7 +1928,7 @@ def analyze_image():
         
         # Emit result via SocketIO for real-time dashboard update
         socketio.emit('ai_analysis_result', {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'result': result,
             'image_size': len(image_data),
             'module5_sent': True
@@ -1696,7 +1941,7 @@ def analyze_image():
             'confidence': confidence,
             'crowd_level': crowd_level,
             'module5_sent': True,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
         
     except Exception as e:
@@ -1732,7 +1977,7 @@ def get_current_data():
         'feedback_recent': feedback_data[:10] if feedback_data else [],
         'module5': module5_data,
         'module_status': module_status_summary,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': utc_iso()
     })
 
 # --- Historical Data API Endpoints ---
@@ -1759,7 +2004,7 @@ def get_crowd_history():
             'entries': entries,
             'count': len(entries),
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1787,7 +2032,7 @@ def get_environment_history():
             'entries': entries,
             'count': len(entries),
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1815,7 +2060,7 @@ def get_feedback_history():
             'entries': entries,
             'count': len(entries),
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1911,7 +2156,7 @@ def get_crowd_analytics():
                 'change_percent': round(change_percent, 2)
             },
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1998,7 +2243,7 @@ def get_environment_analytics():
             'comfort_score': comfort_stats,
             'hourly_average': hourly_average,
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2052,7 +2297,7 @@ def get_feedback_analytics():
             'categories': dict(categories),
             'total_feedback': len(entries),
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2063,8 +2308,80 @@ def get_module_status_api():
     return jsonify({
         'status': get_module_status_summary(),
         'connected_modules': connected_modules,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': utc_iso()
     })
+
+@app.route('/api/module_locations')
+def get_module_locations_api():
+    """Get locations for all known modules (for /map page)."""
+    locations = []
+    for module_id, loc in module_locations.items():
+        locations.append({
+            'module_id': module_id,
+            'court_id': loc.get('court_id', 'unknown'),
+            'module_type': loc.get('module_type', 'unknown'),
+            'lat': loc.get('lat'),
+            'lon': loc.get('lon'),
+            'city': loc.get('city', ''),
+            'last_updated': loc.get('last_updated', '')
+        })
+    return jsonify({
+        'locations': locations,
+        'default_lat': DEFAULT_MAP_LAT,
+        'default_lon': DEFAULT_MAP_LON,
+        'timestamp': utc_iso()
+    })
+
+@app.route('/api/latest_video_frame')
+def get_latest_video_frame():
+    """Return the latest video frame as JPEG. Poll this to avoid Socket.IO dropping after ~6 frames."""
+    global latest_video_frame_data
+    if not latest_video_frame_data:
+        return Response(status=204)
+    b64 = latest_video_frame_data.get('video_frame')
+    if not b64:
+        return Response(status=204)
+    try:
+        raw = base64.b64decode(b64)
+        return Response(raw, mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
+    except Exception:
+        return Response(status=204)
+
+@app.route('/api/logs')
+def get_logs_api():
+    """Get logs from logs.db for dashboard (recent first)."""
+    try:
+        limit = int(request.args.get('limit', 200))
+        level = request.args.get('level', '')
+        conn = sqlite3.connect(LOGS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if level:
+            cur.execute('SELECT id, timestamp, level, message, source FROM logs WHERE level = ? ORDER BY id DESC LIMIT ?', (level, limit))
+        else:
+            cur.execute('SELECT id, timestamp, level, message, source FROM logs ORDER BY id DESC LIMIT ?', (limit,))
+        rows = cur.fetchall()
+        conn.close()
+        data = [dict(r) for r in rows]
+        return jsonify({'data': data, 'count': len(data), 'timestamp': utc_iso()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/connections')
+def get_connections_api():
+    """Get connection state history from logs.db for dashboard."""
+    try:
+        limit = int(request.args.get('limit', 100))
+        conn = sqlite3.connect(LOGS_DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute('SELECT id, timestamp, module_id, module_type, event, metadata FROM connection_state ORDER BY id DESC LIMIT ?', (limit,))
+        rows = cur.fetchall()
+        conn.close()
+        data = [dict(r) for r in rows]
+        return jsonify({'data': data, 'count': len(data), 'timestamp': utc_iso()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # --- Chart Data API Endpoints (read from separate databases) ---
 @app.route('/api/charts/crowd')
@@ -2099,7 +2416,7 @@ def get_chart_crowd_data():
             'data': data,
             'count': len(data),
             'hours': hours,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2136,7 +2453,7 @@ def get_chart_env_data():
             'data': data,
             'count': len(data),
             'hours': hours,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2172,7 +2489,7 @@ def get_chart_rating_data():
             'data': data,
             'count': len(data),
             'days': days,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2183,7 +2500,10 @@ def handle_module_register(data):
     """Register a module when it connects"""
     module_id = data.get('module_id', 'unknown')
     module_type = data.get('module_type', 'unknown')
+    court_id = data.get('court_id', '')
     socket_id = request.sid
+    client_ip = request.remote_addr or ''
+    update_module_location(module_id, module_type, court_id, client_ip)
     
     if module_type in connected_modules:
         if module_id not in connected_modules[module_type]:
@@ -2204,7 +2524,7 @@ def handle_module_register(data):
         socketio.emit('module_connected', {
             'module_id': module_id,
             'module_type': module_type,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
         
         # Emit specific event for Module 5 display connections
@@ -2212,7 +2532,7 @@ def handle_module_register(data):
             socketio.emit('module5_display_connected', {
                 'module_id': module_id,
                 'court_id': data.get('court_id', 'unknown'),
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': utc_iso(),
                 'count': len(connected_modules['display'])
             })
 
@@ -2223,20 +2543,22 @@ def handle_crowd_data(data):
     print(f"[{datetime.now()}] Received Crowd Data: {data}")
     current_data['crowd'] = data
     
-    # Update module status
+    # Update module status and map location (from client IP)
     module_id = data.get('module_id', 'unknown')
     update_module_status('crowd_detection', module_id, is_online=True)
+    update_module_location(module_id, 'crowd_detection', data.get('court_id', ''), request.remote_addr or '')
     
     # Save to persistent storage with full historical records
     # Write directly to crowd.db
     if 'data' in data:
         people_count = data['data'].get('people_count', 0)
         noise_db = data['data'].get('noise_db')
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
+        write_log('INFO', f'Crowd: {people_count} people, {noise_db or "—"} dB', 'crowd')
         
         # Write directly to crowd.db
         write_crowd_to_db({
-            'timestamp': timestamp.isoformat(),
+            'timestamp': to_utc_iso(timestamp),
             'people_count': people_count,
             'noise_db': noise_db,
             'crowd_level': data['data'].get('crowd_level'),
@@ -2267,11 +2589,11 @@ def handle_crowd_data(data):
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                 except:
-                    timestamp = datetime.now()
+                    timestamp = datetime.now(timezone.utc)
             else:
-                timestamp = datetime.now()
+                timestamp = datetime.now(timezone.utc)
         else:
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
         
         # Save to persistent storage with full data
         global historical_data
@@ -2335,7 +2657,7 @@ def handle_crowd_video(data):
         socketio.emit('module_connected', {
             'module_id': module_id,
             'module_type': module_type,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': utc_iso()
         })
     
     # Extract video_frame from nested data structure and put it at top level
@@ -2362,10 +2684,20 @@ def handle_crowd_video(data):
             if key in data['data']:
                 video_frame_data['data'][key] = data['data'][key]
     
-    # PRIORITY 1: Emit video frame immediately for display (don't wait for analysis)
-    # This ensures smooth video streaming
-    socketio.emit('crowd_video_update', video_frame_data)
-    print(f"[{datetime.now()}] ✓ Emitted crowd_video_update to frontend: frame_size={len(video_frame_base64) if video_frame_base64 else 0} bytes, module_id={module_id}")
+    # PRIORITY 1: Store latest frame only (discard old), emit at fixed interval so client never gets a backlog
+    global last_video_emit_time, latest_video_frame_data
+    latest_video_frame_data = video_frame_data  # overwrite; old frame discarded
+    now = time.time()
+    if (now - last_video_emit_time) >= VIDEO_EMIT_INTERVAL:
+        last_video_emit_time = now
+        if latest_video_frame_data:
+            try:
+                n_clients = len(socketio.server.manager.rooms.get('/', {}))
+            except Exception:
+                n_clients = '?'
+            socketio.emit('crowd_video_update', latest_video_frame_data)
+            size = len(latest_video_frame_data.get('video_frame') or '')
+            print(f"[{datetime.now()}] ✓ Emitted crowd_video_update to frontend: frame_size={size} bytes, module_id={module_id}, clients={n_clients}")
     
     # PRIORITY 2: Run OpenCV analysis in background thread, only every 5 seconds
     # This prevents blocking the video stream
@@ -2396,7 +2728,7 @@ def handle_crowd_video(data):
                     current_data['crowd'].update({
                         'module_id': module_id,
                         'module_type': 'crowd_detection',
-                        'timestamp': datetime.now().isoformat(),
+                        'timestamp': utc_iso(),
                         'court_id': data.get('court_id', 'basketball_a'),
                         'data': {
                             'people_count': people_count,
@@ -2407,18 +2739,18 @@ def handle_crowd_video(data):
                             'proximity_triggered': video_frame_data.get('data', {}).get('proximity_triggered')
                         },
                         '_ai_analysis': True,
-                        '_ai_timestamp': datetime.now().isoformat(),
+                        '_ai_timestamp': utc_iso(),
                         '_detection_method': 'opencv'
                     })
                     
                     # Save to persistent storage
-                    timestamp = datetime.now()
+                    timestamp = datetime.now(timezone.utc)
                     historical_data = add_crowd_entry(people_count, timestamp, full_data=current_data['crowd'])
                     
                     # Write directly to crowd.db
                     noise_db = video_frame_data.get('data', {}).get('noise_db')
                     write_crowd_to_db({
-                        'timestamp': timestamp.isoformat(),
+                        'timestamp': to_utc_iso(timestamp),
                         'people_count': people_count,
                         'noise_db': noise_db,
                         'crowd_level': crowd_level,
@@ -2482,7 +2814,7 @@ def handle_crowd_video(data):
         current_data['crowd'].update({
             'module_id': video_frame_data.get('module_id', module_id),
             'module_type': 'crowd_detection',
-            'timestamp': video_frame_data.get('timestamp', datetime.now().isoformat()),
+            'timestamp': video_frame_data.get('timestamp', utc_iso()),
             'court_id': video_frame_data.get('court_id', 'basketball_a')
         })
         
@@ -2493,22 +2825,33 @@ def handle_crowd_video(data):
         
         # Preserve analysis metadata
         current_data['crowd']['_ai_analysis'] = True
-        current_data['crowd']['_ai_timestamp'] = datetime.now().isoformat()
+        current_data['crowd']['_ai_timestamp'] = utc_iso()
         current_data['crowd']['_detection_method'] = 'opencv'
         
         # Save to persistent storage
         people_count = video_frame_data['data']['people_count']
-        timestamp_str = video_frame_data.get('timestamp') or datetime.now().isoformat()
+        timestamp_str = video_frame_data.get('timestamp') or utc_iso()
         try:
             timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
         except:
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
         
         # historical_data is already declared as global at the top of the function
         historical_data = add_crowd_entry(people_count, timestamp, full_data=current_data['crowd'])
         
+        # Write to crowd.db then immediately update clients
+        write_crowd_to_db({
+            'timestamp': timestamp_str,
+            'people_count': people_count,
+            'noise_db': noise_db,
+            'crowd_level': video_frame_data.get('data', {}).get('crowd_level'),
+            'confidence': video_frame_data.get('data', {}).get('confidence'),
+            'motion_detected': video_frame_data.get('data', {}).get('motion_detected'),
+            'proximity_triggered': video_frame_data.get('data', {}).get('proximity_triggered')
+        })
+        socketio.emit('crowd_update', current_data['crowd'])
+        
         # Add to minute buffer
-        noise_db = video_frame_data.get('data', {}).get('noise_db')
         add_to_buffer('module1_crowd', {
             'people_count': people_count,
             'noise_db': noise_db,
@@ -2521,7 +2864,7 @@ def handle_crowd_video(data):
                 'timestamp': datetime.now()
             })
         
-        print(f"[{datetime.now()}] Updated current_data['crowd'] with OpenCV analysis: {people_count} people")
+        print(f"[{datetime.now()}] Saved crowd {people_count} people to DB and emitted crowd_update")
     
     # Also handle data from Module 1 client (if it includes people_count from client side)
     # But preserve AI analysis data if it's recent and Module 1 data is empty/old
@@ -2539,7 +2882,7 @@ def handle_crowd_video(data):
                 try:
                     ai_timestamp = datetime.fromisoformat(ai_timestamp.replace('Z', '+00:00'))
                 except:
-                    ai_timestamp = datetime.now()
+                    ai_timestamp = datetime.now(timezone.utc)
             elif not isinstance(ai_timestamp, datetime):
                 # Try to get from timestamp field
                 timestamp_str = existing_crowd.get('timestamp')
@@ -2547,9 +2890,9 @@ def handle_crowd_video(data):
                     try:
                         ai_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                     except:
-                        ai_timestamp = datetime.now()
+                        ai_timestamp = datetime.now(timezone.utc)
                 else:
-                    ai_timestamp = datetime.now()
+                    ai_timestamp = datetime.now(timezone.utc)
             
             # Calculate time difference (handle timezone-aware datetimes)
             now = datetime.now()
@@ -2580,16 +2923,16 @@ def handle_crowd_video(data):
                         try:
                             timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                         except:
-                            timestamp = datetime.now()
+                            timestamp = datetime.now(timezone.utc)
                     else:
-                        timestamp = datetime.now()
+                        timestamp = datetime.now(timezone.utc)
                     historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
                 
                 # Add to minute buffer if we have crowd data
                 if 'data' in data and data['data']:
                     people_count = data['data'].get('people_count', 0)
                     noise_db = data['data'].get('noise_db')
-                    timestamp = datetime.now()
+                    timestamp = datetime.now(timezone.utc)
                     
                     add_to_buffer('module1_crowd', {
                         'people_count': people_count,
@@ -2617,16 +2960,16 @@ def handle_crowd_video(data):
                     try:
                         timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                     except:
-                        timestamp = datetime.now()
+                        timestamp = datetime.now(timezone.utc)
                 else:
-                    timestamp = datetime.now()
+                    timestamp = datetime.now(timezone.utc)
                 historical_data = add_crowd_entry(people_count, timestamp, full_data=data)
             
             # Add to minute buffer if we have crowd data
             if 'data' in data and data['data']:
                 people_count = data['data'].get('people_count', 0)
                 noise_db = data['data'].get('noise_db')
-                timestamp = datetime.now()
+                timestamp = datetime.now(timezone.utc)
                 
                 add_to_buffer('module1_crowd', {
                     'people_count': people_count,
@@ -2669,19 +3012,20 @@ def handle_environment_data(data):
     print(f"[{datetime.now()}] Received Environment Data: {data}")
     current_data['environment'] = data
     
-    # Update module status
+    # Update module status and map location (from client IP)
     module_id = data.get('module_id', 'unknown')
     update_module_status('environment', module_id, is_online=True)
+    update_module_location(module_id, 'environment', data.get('court_id', ''), request.remote_addr or '')
     
     # Save to persistent storage with full historical records
     timestamp_str = data.get('timestamp')
     if timestamp_str:
         try:
             timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        except:
-            timestamp = datetime.now()
+        except Exception:
+            timestamp = datetime.now(timezone.utc)
     else:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     # Extract environment data for storage
     env_data_to_store = data.get('data', {}) if 'data' in data else data
@@ -2690,8 +3034,10 @@ def handle_environment_data(data):
     # Write directly to env.db
     if 'data' in data:
         env_data = data['data']
+        t, h, c = env_data.get('temperature_c'), env_data.get('humidity_percent'), env_data.get('comfort_score')
+        write_log('INFO', f'Env: {t or "—"}°C, {h or "—"}%, comfort {c or "—"}', 'environment')
         write_env_to_db({
-            'timestamp': timestamp.isoformat(),
+            'timestamp': to_utc_iso(timestamp),
             'temperature_c': env_data.get('temperature_c'),
             'humidity_percent': env_data.get('humidity_percent'),
             'pressure_hpa': env_data.get('pressure_hpa'),
@@ -2708,7 +3054,7 @@ def handle_environment_data(data):
             'uv_index': env_data.get('uv_index'),
             'voc_level': env_data.get('voc_level'),
             'comfort_score': env_data.get('comfort_score'),
-            'timestamp': datetime.now()
+            'timestamp': datetime.now(timezone.utc)
         })
     
     socketio.emit('environment_update', data)
@@ -2763,7 +3109,7 @@ def handle_feedback_status(data):
     if module3_state['last_rating_timestamp']:
         try:
             last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
-            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now(timezone.utc)
             time_diff = (now - last_rating_dt).total_seconds()
             
             # Format time difference
@@ -2785,7 +3131,7 @@ def handle_feedback_status(data):
         'is_active': is_active,
         'distance_cm': distance,
         'screen_on': is_active,
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': utc_iso(),
         'last_rating_timestamp': module3_state['last_rating_timestamp'],
         'latest_rating': module3_state['latest_rating'],
         'time_since_last_rating': time_since_last_rating
@@ -2800,26 +3146,31 @@ def handle_feedback_data(data):
     if len(current_data['feedback']) > 50:
         current_data['feedback'].pop(0)
     
-    # Update module status
+    # Update module status and map location (from client IP)
     module_id = data.get('module_id', 'unknown')
     update_module_status('feedback', module_id, is_online=True)
+    update_module_location(module_id, 'feedback', data.get('court_id', ''), request.remote_addr or '')
     
     # Save to persistent storage with full historical records
     timestamp_str = data.get('timestamp')
     if timestamp_str:
         try:
             timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        except:
-            timestamp = datetime.now()
+        except Exception:
+            timestamp = datetime.now(timezone.utc)
     else:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
     
     add_feedback_entry(data, timestamp)
     
-    # Write directly to rating.db
     feedback_data = data.get('data', {})
+    report_type = feedback_data.get('report_type', 'feedback')
+    rating = feedback_data.get('rating')
+    write_log('INFO', f'Feedback: {report_type}' + (f' rating={rating}' if rating is not None else ''), 'feedback')
+    
+    # Write directly to rating.db
     write_rating_to_db({
-        'timestamp': timestamp.isoformat(),
+        'timestamp': to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso()),
         'rating': feedback_data.get('rating'),
         'report_type': feedback_data.get('report_type'),
         'question_text': feedback_data.get('question_text'),
@@ -2832,7 +3183,7 @@ def handle_feedback_data(data):
         rating = feedback_data.get('rating')
         if rating is not None:
             module3_state['latest_rating'] = rating
-            module3_state['last_rating_timestamp'] = datetime.now().isoformat()
+            module3_state['last_rating_timestamp'] = utc_iso()
             save_module3_state()  # Persist state change
             print(f"[{datetime.now()}] Module 3: Latest rating updated to {rating}/5")
     
@@ -2859,7 +3210,7 @@ def handle_feedback_data(data):
     if module3_state['last_rating_timestamp']:
         try:
             last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
-            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now(timezone.utc)
             time_diff = (now - last_rating_dt).total_seconds()
             
             # Format time difference
@@ -2986,15 +3337,16 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
     current_hour = datetime.now().hour
     capacity = 10  # Default capacity
     
-    # Load historical data (don't update here - only update when NEW data arrives)
+    # Load historical data for Module 5: last 12 hours only (don't update here - only when NEW data arrives)
     global historical_data
     historical_data = load_history()
+    history_last_12h = get_crowd_history_last_hours(12)
     
-    # Get hourly pattern from actual historical data (calculated server-side)
-    today_hourly = get_today_hourly_pattern(historical_data, current_hour, people_count, capacity)
+    # Get hourly pattern from last 12 hrs historical data (calculated server-side)
+    today_hourly = get_today_hourly_pattern(history_last_12h, current_hour, people_count, capacity)
     
-    # Get weekly pattern from actual historical data (calculated server-side)
-    week_same_time = get_weekly_pattern(historical_data, current_hour, people_count, capacity)
+    # Get weekly pattern from last 12 hrs historical data (calculated server-side)
+    week_same_time = get_weekly_pattern(history_last_12h, current_hour, people_count, capacity)
     
     # Generate alternatives (fewer if current court is busy)
     num_alternatives = 2 if occupancy < 0.7 else 3
@@ -3032,7 +3384,7 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
     # Build Module 5 data structure
     module5_data = {
         'court_id': court_id,
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': utc_iso(),
         'current': {
             'occupancy': occupancy,
             'people_count': people_count,
@@ -3184,7 +3536,7 @@ def generate_module5_test_data(court_id, scenario='normal', custom_data=None):
     # Build base data structure
     base_data = {
         'court_id': court_id,
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': utc_iso(),
         'current': {
             'occupancy': occupancy,
             'people_count': params['people'],
@@ -3297,7 +3649,7 @@ def handle_send_test_data_module5(data):
     socketio.emit('test_data_sent', {
         'scenario': test_scenario,
         'court_id': court_id,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': utc_iso()
     })
     
     return {'status': 'success', 'scenario': test_scenario}
@@ -3329,7 +3681,7 @@ def handle_start_mock(data=None):
                 socketio.emit('module_connected', {
                     'module_id': module_id,
                     'module_type': module_type,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': utc_iso()
                 })
         
         return {'status': 'success', 'message': 'Mock mode started'}
@@ -3376,7 +3728,7 @@ def handle_stop_mock(data=None):
         # Generate empty Module 5 data to signal "disconnect"
         empty_module5 = {
             'court_id': 'basketball_a',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'current': {
                 'occupancy': 0,
                 'people_count': 0,
@@ -3485,7 +3837,11 @@ def handle_send_mock_data_once(data=None):
 # --- Connection Events ---
 @socketio.on('connect')
 def test_connect():
-    print(f'[{datetime.now()}] Client Connected: {request.sid}')
+    try:
+        n = len(socketio.server.manager.rooms.get('/', {}))
+    except Exception:
+        n = '?'
+    print(f'[{datetime.now()}] Client Connected: sid={request.sid} (total clients in /: {n})')
     # Send current data to newly connected client
     emit('current_data_snapshot', current_data)
     # Send mock mode status
@@ -3502,9 +3858,9 @@ def test_connect():
     })
 
 @socketio.on('disconnect')
-def test_disconnect():
+def test_disconnect(reason=None):
     socket_id = request.sid
-    print(f'[{datetime.now()}] Client Disconnected: {socket_id}')
+    print(f'[{datetime.now()}] Client Disconnected: sid={socket_id} reason={reason!r}')
     
     # Check if this was a display module
     if socket_id in display_module_sockets:
@@ -3525,7 +3881,7 @@ def test_disconnect():
         # Emit disconnect event for Module 5
         socketio.emit('module5_display_disconnected', {
             'module_id': module_id,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'count': len(connected_modules['display'])
         })
         print(f"[{datetime.now()}] Module 5 display disconnected: {module_id}")
@@ -3553,7 +3909,7 @@ def test_disconnect():
         if module3_state['last_rating_timestamp']:
             try:
                 last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
-                now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now()
+                now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now(timezone.utc)
                 time_diff = (now - last_rating_dt).total_seconds()
                 
                 # Format time difference
@@ -3575,7 +3931,7 @@ def test_disconnect():
             'is_active': False,
             'distance_cm': None,
             'screen_on': False,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_iso(),
             'last_rating_timestamp': module3_state['last_rating_timestamp'],
             'latest_rating': module3_state['latest_rating'],
             'time_since_last_rating': time_since_last_rating
@@ -3660,4 +4016,3 @@ if __name__ == '__main__':
     print(f"Access via: http://{local_ip}:5000 or http://192.168.72.161:5000")
     print("=" * 60)
     wsgi.server(eventlet.listen(("0.0.0.0", 5000)), app)
-

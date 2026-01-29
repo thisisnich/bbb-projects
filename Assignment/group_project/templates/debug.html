@@ -224,6 +224,9 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .logLevelError { color: var(--danger); }
+    .logLevelWarn { color: #ca8a04; }
+
     .btn {
       padding: var(--s8) var(--s12);
       border-radius: var(--r6);
@@ -451,12 +454,12 @@
         </div>
       </div>
 
-      <!-- Activity Panel -->
+      <!-- Activity Panel: last 100 server log events -->
       <div class="card">
         <div class="cardHeader">
           <div>
             <p class="title">Activity</p>
-            <p class="subtitle">Last 50 events</p>
+            <p class="subtitle">Last 100 events (from server logs)</p>
           </div>
           <span class="badge muted mono" id="log-count">0</span>
         </div>
@@ -466,7 +469,7 @@
   </div>
 
   <script>
-    const socket = io();
+    const socket = io({ transports: ['websocket', 'polling'] });
     let currentData = null;
 
     // State for mock mode
@@ -705,12 +708,44 @@
       const item = document.createElement("div");
       item.className = "logItem";
       const time = new Date().toLocaleTimeString();
-      item.innerHTML = `<span class="logTime mono">${time}</span>${msg}`;
+      item.innerHTML = `<span class="logTime mono">${time}</span>${escapeHtml(msg)}`;
       logEl.insertBefore(item, logEl.firstChild);
-      if (logEl.children.length > 50) {
+      if (logEl.children.length > 100) {
         logEl.removeChild(logEl.lastChild);
       }
       document.getElementById("log-count").textContent = logCount;
+    }
+
+    function parseUtc(ts) {
+      if (ts == null || ts === "") return null;
+      const s = String(ts).trim();
+      if (s.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s.replace("Z", "+00:00"));
+      return new Date(s + "Z");
+    }
+
+    function loadActivityLog() {
+      fetch("/api/logs?limit=100")
+        .then(r => r.json())
+        .then(res => {
+          const el = document.getElementById("log");
+          const logCountEl = document.getElementById("log-count");
+          if (!el) return;
+          const data = (res && res.data) ? res.data : [];
+          el.innerHTML = "";
+          data.forEach(entry => {
+            const item = document.createElement("div");
+            item.className = "logItem";
+            const ts = entry.timestamp;
+            const timeStr = ts ? (parseUtc(ts) ? parseUtc(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : String(ts)) : "—";
+            const level = (entry.level || "").toLowerCase();
+            const levelCls = level === "error" ? " logLevelError" : (level === "warn" ? " logLevelWarn" : "");
+            const src = entry.source ? " [" + escapeHtml(entry.source) + "]" : "";
+            item.innerHTML = "<span class=\"logTime mono\">[" + timeStr + "]</span><span class=\"" + levelCls + "\">" + escapeHtml(entry.message || "") + "</span>" + src;
+            el.appendChild(item);
+          });
+          if (logCountEl) logCountEl.textContent = String(data.length);
+        })
+        .catch(() => {});
     }
 
     // Request current data on load
@@ -725,6 +760,10 @@
         })
         .catch(e => console.error("Failed to fetch current data:", e));
     });
+
+    // Load server activity log (last 100 events) and refresh every 10s
+    loadActivityLog();
+    setInterval(loadActivityLog, 10000);
   </script>
 </body>
 </html>

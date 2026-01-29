@@ -45,6 +45,15 @@ Run the test client to verify everything works:
 python test_client_example.py
 ```
 
+### Map page
+
+The **/map** page shows where modules/courts are located. Locations are inferred from each BBB client’s IP when it registers (public IPs are geolocated; private IPs use a default venue position).
+
+- **URL:** `http://<server>:5000/map`
+- **Optional env vars** (for private IPs or when geolocation fails):
+  - `DEFAULT_MAP_LAT` – default latitude (e.g. `1.3788`)
+  - `DEFAULT_MAP_LON` – default longitude (e.g. `103.8489`)
+
 ## 📡 Supported Modules
 
 ### 1. Crowd Detection Module

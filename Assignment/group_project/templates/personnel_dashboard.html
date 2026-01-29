@@ -569,13 +569,17 @@
       color: var(--textMuted);
     }
     .logTime{ color: var(--textFaint); margin-right: var(--s8); font-variant-numeric: tabular-nums; }
+    .logLevelError{ color: var(--danger, #dc2626); }
+    .logLevelWarn{ color: var(--warn, #ca8a04); }
 
-    /* Charts (fix infinite growth by hard-sizing containers) */
-    /* Charts - single column stack */
+    /* Charts: 3 columns on desktop, 1 column on mobile (≤768px) */
     .chartsGrid{
       display:grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--s16);
+    }
+    @media (max-width: 768px){
+      .chartsGrid{ grid-template-columns: 1fr; }
     }
     @media (max-width: 600px){
       .chartsGrid{ gap: var(--s12); }
@@ -585,6 +589,24 @@
     @media (max-width: 380px){
       .chartBox{ height: 220px; padding: var(--s8); }
     }
+    /* Video feed: clean viewport, no layout jump, reduced flicker */
+    #m1-image-container {
+      margin-bottom: var(--s16);
+      max-width: 640px;
+      aspect-ratio: 16 / 9;
+      background: #0d0d0d;
+      border-radius: var(--r8);
+      overflow: hidden;
+      border: 1px solid var(--borderSubtle);
+    }
+    #m1-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      vertical-align: top;
+    }
+
     .chartBox{
       border: 0.5px solid var(--borderSubtle);
       border-radius: var(--r8);
@@ -635,6 +657,7 @@
         </div>
         <div style="display: flex; align-items: center; gap: var(--s12);">
           <span class="pill mono" id="server-origin">—</span>
+          <a href="/map" class="btn" style="text-decoration: none;">Map</a>
           <a href="/logout" class="btn" style="text-decoration: none;">Logout</a>
         </div>
       </div>
@@ -781,8 +804,8 @@
           </div>
         </div>
         
-        <div id="m1-image-container" style="margin-bottom: 15px; display: none;">
-          <img id="m1-image" src="" alt="Video Feed" style="width: 100%; max-width: 640px; border-radius: 8px; border: 1px solid var(--borderSubtle);">
+        <div id="m1-image-container" style="display: none;">
+          <img id="m1-image" src="" alt="Video Feed">
         </div>
         <div id="m1-grid" class="grid">
           <div class="emptyState">Waiting for crowd data…</div>
@@ -946,7 +969,8 @@
     // Keep the SAME event logic, but make connection robust:
     // - Use same-origin Socket.IO (avoids hardcoded IP mismatch)
     // - Handle current_data_snapshot to render immediately
-    const socket = io(); // same origin
+    // Prefer WebSocket so large video frames don't stop after ~6 (polling hits response limits)
+    const socket = io({ transports: ['websocket', 'polling'] });
     const courtId = "basketball_a";
 
     const state = {
@@ -959,6 +983,13 @@
       mockInterval: 30,
       pollInterval: null,
       lastDataHash: null,
+      pendingVideoFrame: null,
+      videoFrameRafId: null,
+      currentVideoObjectUrl: null,
+      httpVideoObjectUrl: null,
+      lastVideoFrameLog: null,
+      videoFrameReceiveCount: 0,
+      videoFramePaintCount: 0,
       charts: { 
         crowdHourly: null, 
         crowdWeekly: null, 
@@ -984,6 +1015,13 @@
       return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
+    function parseUtc(ts) {
+      if (ts == null || ts === '') return null;
+      const s = String(ts).trim();
+      if (s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s.replace('Z', '+00:00'));
+      return new Date(s + 'Z');
+    }
+
     function log(message){
       const el = document.getElementById("log");
       if(!el) {
@@ -999,6 +1037,28 @@
       if(logCountEl) {
         logCountEl.textContent = String(Math.min(el.children.length, 50));
       }
+    }
+
+    function loadActivityLog(){
+      fetch("/api/logs?limit=50").then(r => r.json()).then(res => {
+        const el = document.getElementById("log");
+        const logCountEl = document.getElementById("log-count");
+        if (!el) return;
+        const data = (res && res.data) ? res.data : [];
+        el.innerHTML = "";
+        data.forEach(entry => {
+          const item = document.createElement("div");
+          item.className = "logItem";
+          const ts = entry.timestamp;
+          const timeStr = ts ? (parseUtc(ts) ? parseUtc(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : String(ts)) : "—";
+          const level = (entry.level || "").toLowerCase();
+          const levelCls = level === "error" ? " logLevelError" : (level === "warn" ? " logLevelWarn" : "");
+          const src = entry.source ? ` [${escapeHtml(entry.source)}]` : "";
+          item.innerHTML = `<span class="logTime">[${timeStr}]</span><span class="${levelCls}">${escapeHtml(entry.message || "")}</span>${src}`;
+          el.appendChild(item);
+        });
+        if (logCountEl) logCountEl.textContent = String(data.length);
+      }).catch(() => {});
     }
 
     function escapeHtml(str){
@@ -1515,8 +1575,8 @@
         
         // Show every individual entry from the last 12 hours
         const labels = result.data.map(entry => {
-          const d = new Date(entry.timestamp);
-          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+          const d = parseUtc(entry.timestamp);
+          return d ? d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
         });
         
         const values = result.data.map(entry => {
@@ -1547,7 +1607,7 @@
         // Group by day of week
         const dayMap = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
         result.data.forEach(entry => {
-          const dayOfWeek = new Date(entry.timestamp).getDay();
+          const dayOfWeek = (parseUtc(entry.timestamp) || new Date()).getDay();
           dayMap[dayOfWeek].push(entry.people_count || 0);
         });
         
@@ -1579,8 +1639,8 @@
         }
         
         const labels = result.data.map(e => {
-          const d = new Date(e.timestamp);
-          return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+          const d = parseUtc(e.timestamp);
+          return d ? d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
         });
         
         if(state.charts.envRecent) {
@@ -1609,8 +1669,8 @@
         // Group by day
         const dayMap = {};
         result.data.forEach(entry => {
-          const d = new Date(entry.timestamp);
-          const key = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+          const d = parseUtc(entry.timestamp);
+          const key = d ? d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
           if(!dayMap[key]) {
             dayMap[key] = {temp: [], humidity: [], uv: [], comfort: []};
           }
@@ -1684,7 +1744,11 @@
           return;
         }
         const now = new Date();
-        const startOf24h = now.getTime() - 24 * 60 * 60 * 1000;
+        const startOf24hDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        startOf24hDate.setMinutes(0, 0, 0);
+        startOf24hDate.setSeconds(0, 0);
+        startOf24hDate.setMilliseconds(0);
+        const startOf24h = startOf24hDate.getTime();
         const buckets = [];
         const labels = [];
         for(let i = 0; i < 24; i++) {
@@ -1698,9 +1762,11 @@
         result.data.forEach(entry => {
           const r = Number(entry.rating);
           if(isNaN(r) || entry.timestamp == null) return;
-          const ts = new Date(entry.timestamp.replace("Z", "+00:00")).getTime();
-          const bucketIndex = Math.floor((ts - startOf24h) / (60 * 60 * 1000));
-          if(bucketIndex >= 0 && bucketIndex < 24) {
+          const tsDate = parseUtc(entry.timestamp);
+          if (!tsDate) return;
+          const ts = tsDate.getTime();
+          const bucketIndex = Math.min(23, Math.floor((ts - startOf24h) / (60 * 60 * 1000)));
+          if(bucketIndex >= 0) {
             buckets[bucketIndex].sum += r;
             buckets[bucketIndex].count += 1;
           }
@@ -1751,7 +1817,8 @@
               fill: true,
               tension: 0.3,
               pointRadius: 3,
-              pointHoverRadius: 5
+              pointHoverRadius: 5,
+              spanGaps: true
             }]
           },
           options: {
@@ -1809,10 +1876,10 @@
           data: {
             labels: [],
             datasets: [
-              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
-              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
-              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
-              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3, spanGaps: true },
+              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3, spanGaps: true },
+              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3, spanGaps: true },
+              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3, spanGaps: true }
             ]
           },
           options: {
@@ -1836,10 +1903,10 @@
           data: {
             labels: [],
             datasets: [
-              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3 },
-              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3 },
-              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3 },
-              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3 }
+              { label: "Temp (°C)", data: [], borderColor: "#ef4444", tension: 0.3, spanGaps: true },
+              { label: "Humidity (%)", data: [], borderColor: "#3b82f6", tension: 0.3, spanGaps: true },
+              { label: "UV", data: [], borderColor: "#f59e0b", tension: 0.3, spanGaps: true },
+              { label: "Comfort", data: [], borderColor: "#10b981", tension: 0.3, spanGaps: true }
             ]
           },
           options: {
@@ -1894,7 +1961,8 @@
               fill: true,
               tension: 0.35,
               pointRadius: 3,
-              pointHoverRadius: 5
+              pointHoverRadius: 5,
+              spanGaps: true
             }]
           },
           options: {
@@ -2142,8 +2210,10 @@
       // Mock mode moved to /debug page
     }
 
-    // Socket events (same logic, plus snapshot handler)
+    // Socket events (same logic, plus snapshot handler) — with connection debug logs
     socket.on("connect", () => {
+      const transport = (socket.io && socket.io.engine && socket.io.engine.transport && socket.io.engine.transport.name) || "?";
+      console.log("[SOCKET] connect: id=" + socket.id + " connected=" + socket.connected + " transport=" + transport);
       document.getElementById("server-status-text").textContent = "Online";
       setDot("dot-server", "online");
       setDot("dot-dbg", "online");
@@ -2152,7 +2222,8 @@
       log("Connected to server");
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
+      console.log("[SOCKET] disconnect: reason=" + reason + " id=" + (socket.id || "—") + " connected=" + socket.connected);
       document.getElementById("server-status-text").textContent = "Offline";
       setDot("dot-server", "offline");
       setDot("dot-dbg", "offline");
@@ -2165,6 +2236,22 @@
       setModuleStatus("m2-status", "idle");
       setModuleStatus("m3-status", "idle");
       log("Disconnected from server");
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("[SOCKET] connect_error:", err.message || err);
+    });
+    socket.on("connect_timeout", () => {
+      console.warn("[SOCKET] connect_timeout");
+    });
+    socket.on("reconnect", () => {
+      console.log("[SOCKET] reconnect: id=" + socket.id);
+    });
+    socket.on("reconnect_attempt", (n) => {
+      console.log("[SOCKET] reconnect_attempt " + n);
+    });
+    socket.on("reconnect_failed", () => {
+      console.error("[SOCKET] reconnect_failed");
     });
 
     socket.on("current_data_snapshot", (snapshot) => {
@@ -2320,53 +2407,105 @@
       }
     });
     
-    socket.on("crowd_video_update", (data) => {
-      log("Video frame received from " + (data.module_id || "unknown"));
-      
-      // Update module status when video frames are received
-      if(data.module_id) {
-        state.health.m1.lastSeen = Date.now();
-        setModuleStatus("m1-status", "active");
-        log(`Module ${data.module_id} is active (sending video frames)`);
+    function base64ToBlob(base64, mimeType) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mimeType || "image/jpeg" });
+    }
+
+    function scheduleVideoFramePaint() {
+      if (state.videoFrameRafId != null) {
+        console.log("[VIDEO] scheduleVideoFramePaint: already scheduled, skip");
+        return;
       }
-      
-      // Display video frame image if available
-      if(data.video_frame) {
+      console.log("[VIDEO] scheduleVideoFramePaint: requesting rAF");
+      state.videoFrameRafId = requestAnimationFrame(function paintVideoFrame() {
+        state.videoFrameRafId = null;
+        const d = state.pendingVideoFrame;
+        state.pendingVideoFrame = null;
+        const morePending = !!state.pendingVideoFrame;
+        console.log("[VIDEO] paintVideoFrame: ran, hasPayload=" + !!d + ", hasVideoFrame=" + !!(d && d.video_frame) + ", morePending=" + morePending);
+        if (!d || !d.video_frame) return;
         try {
           const imageContainer = document.getElementById("m1-image-container");
           const imageElement = document.getElementById("m1-image");
-          if(imageContainer && imageElement) {
-            // Store video frame for analysis
-            currentVideoFrameBase64 = data.video_frame;
-            
-            // Set image source from base64 data
-            imageElement.src = "data:image/jpeg;base64," + data.video_frame;
-            imageContainer.style.display = "block";
-            
-            // Enable analyze button when video frame is available
-            const analyzeBtn = document.getElementById("ai-analyze-btn");
-            if(analyzeBtn) {
-              analyzeBtn.disabled = false;
-              analyzeBtn.style.opacity = "1";
-              analyzeBtn.style.cursor = "pointer";
-              // Update image name display
-              document.getElementById("ai-image-name").textContent = "Video frame (ready to analyze)";
-            }
+          if (!imageContainer || !imageElement) {
+            console.warn("[VIDEO] paintVideoFrame: m1-image-container or m1-image not found");
+            return;
           }
-        } catch(error) {
-          console.error("Error displaying video frame image:", error);
+          state.videoFramePaintCount += 1;
+          const frameLen = d.video_frame.length;
+          currentVideoFrameBase64 = d.video_frame;
+          if (state.currentVideoObjectUrl) URL.revokeObjectURL(state.currentVideoObjectUrl);
+          const blob = base64ToBlob(d.video_frame, "image/jpeg");
+          state.currentVideoObjectUrl = URL.createObjectURL(blob);
+          imageElement.src = state.currentVideoObjectUrl;
+          imageContainer.style.display = "block";
+          console.log("[VIDEO] paintVideoFrame: painted #" + state.videoFramePaintCount + ", frameLen=" + frameLen + ", blobUrl=" + state.currentVideoObjectUrl.substring(0, 50) + "...");
+          const analyzeBtn = document.getElementById("ai-analyze-btn");
+          if (analyzeBtn) {
+            analyzeBtn.disabled = false;
+            analyzeBtn.style.opacity = "1";
+            analyzeBtn.style.cursor = "pointer";
+            const nameEl = document.getElementById("ai-image-name");
+            if (nameEl) nameEl.textContent = "Video frame (ready to analyze)";
+          }
+          if (d.data) { try { renderCrowd(d); } catch (e) { console.error("Error rendering crowd:", e); } }
+        } catch (e) { console.error("[VIDEO] paintVideoFrame error:", e); }
+        if (state.pendingVideoFrame) scheduleVideoFramePaint();
+      });
+    }
+
+    socket.on("crowd_video_update", (data) => {
+      if (data.module_id) {
+        state.health.m1.lastSeen = Date.now();
+        setModuleStatus("m1-status", "active");
+        const now = Date.now();
+        if (!state.lastVideoFrameLog || (now - state.lastVideoFrameLog) > 3000) {
+          log("Video frame from " + (data.module_id || "unknown"));
+          state.lastVideoFrameLog = now;
         }
       }
-      
-      // If video frame includes crowd data, render it
-      if(data.data) {
-        try {
-          renderCrowd(data);
-        } catch(error) {
-          console.error("Error rendering crowd from video frame:", error);
-        }
+      if (data.video_frame) {
+        state.pendingVideoFrame = data;
+        scheduleVideoFramePaint();
       }
+      if (data.data) { try { renderCrowd(data); } catch (e) { console.error("Error rendering crowd:", e); } }
     });
+
+    // Video image: also poll HTTP every 500ms (keeps updating when Socket.IO stops after ~6 frames)
+    function blobToBase64(blob) {
+      return new Promise(function(resolve, reject) {
+        const r = new FileReader();
+        r.onload = function() { resolve(r.result.split(",")[1] || ""); };
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    }
+    setInterval(function pollVideoFrame() {
+      const imageContainer = document.getElementById("m1-image-container");
+      const imageElement = document.getElementById("m1-image");
+      if (!imageContainer || !imageElement) return;
+      fetch("/api/latest_video_frame?t=" + Date.now(), { cache: "no-store" })
+        .then(function(r) {
+          if (r.status !== 200) return;
+          return r.blob();
+        })
+        .then(function(blob) {
+          if (!blob) return;
+          if (state.httpVideoObjectUrl) URL.revokeObjectURL(state.httpVideoObjectUrl);
+          state.httpVideoObjectUrl = URL.createObjectURL(blob);
+          imageElement.src = state.httpVideoObjectUrl;
+          imageContainer.style.display = "block";
+          blobToBase64(blob).then(function(b64) { currentVideoFrameBase64 = b64; }).catch(function() {});
+          const analyzeBtn = document.getElementById("ai-analyze-btn");
+          if (analyzeBtn) { analyzeBtn.disabled = false; analyzeBtn.style.opacity = "1"; analyzeBtn.style.cursor = "pointer"; }
+          const nameEl = document.getElementById("ai-image-name");
+          if (nameEl) nameEl.textContent = "Video frame (ready to analyze)";
+        })
+        .catch(function() {});
+    }, 500);
     socket.on("environment_update", (data) => {
       log("Environment update received");
       if(data) {
@@ -2663,8 +2802,10 @@
       // Mock mode selects moved to /debug page
 
       updateKpis();
+      loadActivityLog();
+      setInterval(loadActivityLog, 15000);
       log("Dashboard ready");
-      
+
       // Real-time updates handled via Socket.IO events - no polling needed
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
@@ -2700,7 +2841,8 @@
         const lastInteractionElement = document.getElementById("m3-last-interaction");
         if(lastInteractionElement && state.module3.lastRatingTimestamp) {
           try {
-            const lastRatingDate = new Date(state.module3.lastRatingTimestamp);
+            const lastRatingDate = parseUtc(state.module3.lastRatingTimestamp);
+            if (!lastRatingDate) return;
             const timeDiff = (Date.now() - lastRatingDate.getTime()) / 1000; // seconds
             
             let timeStr;
