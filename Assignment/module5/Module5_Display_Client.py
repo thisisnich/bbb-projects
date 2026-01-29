@@ -16,12 +16,14 @@ from datetime import datetime
 import sys
 
 # ========== CONFIGURATION ==========
-SERVER_URL = 'http://192.168.72.161:5000'  # CHANGE THIS to your server IP
+SERVER_URL = 'http://58.182.32.159:5000'  # CHANGE THIS to your server IP
 COURT_ID = 'basketball_a'
 MODULE_ID = 'court_display_5_a'
 OLED_WIDTH = 128  # Actual OLED display is 128x64
 OLED_HEIGHT = 64
-TEXT_Y_OFFSET = -2  # Vertical offset to prevent text from being cut off at top (moved up 10 pixels)
+TEXT_Y_OFFSET = 4  # Vertical offset to prevent text from being cut off at top
+TEXT_X_OFFSET = 40  # Horizontal offset to reserve 40x40 top-left region
+TEXT_Y_START = 24  # Vertical start position (lower = higher on screen)
 AUTO_ROTATION_IDLE_SECONDS = 60  # Auto-rotate after 60 seconds idle
 
 # ========== GLOBAL VARIABLES ==========
@@ -409,15 +411,15 @@ def show_connecting():
                 ImageObj = Image.new("1", (Display.width, Display.height))
                 Draw = ImageDraw.Draw(ImageObj)
                 Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                # Center text calculation
+                # Center text calculation (accounting for 40x40 reserved region)
                 text1 = "Connecting"
                 text2 = "..."
                 bbox1 = Draw.textbbox((0, 0), text1, font=Font)
                 bbox2 = Draw.textbbox((0, 0), text2, font=Font)
-                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
-                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
-                Draw.text((x1, 12 + TEXT_Y_OFFSET), text1, font=Font, fill=1)
-                Draw.text((x2, 24 + TEXT_Y_OFFSET), text2, font=Font, fill=1)
+                x1 = (Display.width - TEXT_X_OFFSET - (bbox1[2] - bbox1[0])) // 2 + TEXT_X_OFFSET
+                x2 = (Display.width - TEXT_X_OFFSET - (bbox2[2] - bbox2[0])) // 2 + TEXT_X_OFFSET
+                Draw.text((x1, TEXT_Y_START), text1, font=Font, fill=1)
+                Draw.text((x2, TEXT_Y_START + 12), text2, font=Font, fill=1)
                 Display.image(ImageObj)
                 Display.show()
             except Exception as e:
@@ -499,15 +501,15 @@ def show_connected():
                 ImageObj = Image.new("1", (Display.width, Display.height))
                 Draw = ImageDraw.Draw(ImageObj)
                 Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                # Center text calculation
+                # Center text calculation (accounting for 40x40 reserved region)
                 text1 = "Connected"
                 text2 = "Waiting..."
                 bbox1 = Draw.textbbox((0, 0), text1, font=Font)
                 bbox2 = Draw.textbbox((0, 0), text2, font=Font)
-                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
-                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
-                Draw.text((x1, 12 + TEXT_Y_OFFSET), text1, font=Font, fill=1)
-                Draw.text((x2, 24 + TEXT_Y_OFFSET), text2, font=Font, fill=1)
+                x1 = (Display.width - TEXT_X_OFFSET - (bbox1[2] - bbox1[0])) // 2 + TEXT_X_OFFSET
+                x2 = (Display.width - TEXT_X_OFFSET - (bbox2[2] - bbox2[0])) // 2 + TEXT_X_OFFSET
+                Draw.text((x1, TEXT_Y_START), text1, font=Font, fill=1)
+                Draw.text((x2, TEXT_Y_START + 12), text2, font=Font, fill=1)
                 Display.image(ImageObj)
                 Display.show()
             except Exception as e:
@@ -533,19 +535,19 @@ def show_connection_error():
                 ImageObj = Image.new("1", (Display.width, Display.height))
                 Draw = ImageDraw.Draw(ImageObj)
                 Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                # Center text calculation
+                # Center text calculation (accounting for 40x40 reserved region)
                 text1 = "Error!"
                 text2 = "No server"
                 text3 = "Check URL"
                 bbox1 = Draw.textbbox((0, 0), text1, font=Font)
                 bbox2 = Draw.textbbox((0, 0), text2, font=Font)
                 bbox3 = Draw.textbbox((0, 0), text3, font=Font)
-                x1 = (Display.width - (bbox1[2] - bbox1[0])) // 2
-                x2 = (Display.width - (bbox2[2] - bbox2[0])) // 2
-                x3 = (Display.width - (bbox3[2] - bbox3[0])) // 2
-                Draw.text((x1, 0 + TEXT_Y_OFFSET), text1, font=Font, fill=1)
-                Draw.text((x2, 12 + TEXT_Y_OFFSET), text2, font=Font, fill=1)
-                Draw.text((x3, 24 + TEXT_Y_OFFSET), text3, font=Font, fill=1)
+                x1 = (Display.width - TEXT_X_OFFSET - (bbox1[2] - bbox1[0])) // 2 + TEXT_X_OFFSET
+                x2 = (Display.width - TEXT_X_OFFSET - (bbox2[2] - bbox2[0])) // 2 + TEXT_X_OFFSET
+                x3 = (Display.width - TEXT_X_OFFSET - (bbox3[2] - bbox3[0])) // 2 + TEXT_X_OFFSET
+                Draw.text((x1, TEXT_Y_START), text1, font=Font, fill=1)
+                Draw.text((x2, TEXT_Y_START + 12), text2, font=Font, fill=1)
+                Draw.text((x3, TEXT_Y_START + 24), text3, font=Font, fill=1)
                 Display.image(ImageObj)
                 Display.show()
             except Exception as e:
@@ -606,8 +608,8 @@ def update_oled_display(view, data):
                             ImageObj = Image.new("1", (Display.width, Display.height))
                             Draw = ImageDraw.Draw(ImageObj)
                             Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                            Draw.text((0, 0 + TEXT_Y_OFFSET), "ERROR", font=Font, fill=1)
-                            Draw.text((0, 8 + TEXT_Y_OFFSET), f"View: {view[:10]}", font=Font, fill=1)
+                            Draw.text((TEXT_X_OFFSET, TEXT_Y_START), "ERROR", font=Font, fill=1)
+                            Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), f"View: {view[:10]}", font=Font, fill=1)
                             Display.image(ImageObj)
                             Display.show()
                         except:
@@ -622,8 +624,8 @@ def update_oled_display(view, data):
                         ImageObj = Image.new("1", (Display.width, Display.height))
                         Draw = ImageDraw.Draw(ImageObj)
                         Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                        Draw.text((0, 0 + TEXT_Y_OFFSET), "ERROR", font=Font, fill=1)
-                        Draw.text((0, 8 + TEXT_Y_OFFSET), str(e)[:20], font=Font, fill=1)
+                        Draw.text((TEXT_X_OFFSET, TEXT_Y_START), "ERROR", font=Font, fill=1)
+                        Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), str(e)[:20], font=Font, fill=1)
                         Display.image(ImageObj)
                         Display.show()
                     except:
@@ -705,14 +707,14 @@ def show_current_status(data):
                     scroll_indicator = f"STATUS [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "STATUS"
-                Draw.text((0, 0 + TEXT_Y_OFFSET), scroll_indicator[:16], font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 lines starting from scroll_offset
-                y = 8 + TEXT_Y_OFFSET
+                y = TEXT_Y_START + 8
                 for i in range(3):
                     idx = scroll_offset + i
                     if idx < len(status_lines):
-                        Draw.text((0, y), status_lines[idx], font=Font, fill=1)
+                        Draw.text((TEXT_X_OFFSET, y), status_lines[idx], font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
@@ -774,10 +776,10 @@ def show_today_pattern(data):
                     scroll_indicator = f"TODAY [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "TODAY"
-                Draw.text((0, 0 + TEXT_Y_OFFSET), scroll_indicator[:16], font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 hours starting from scroll_offset
-                y = 8 + TEXT_Y_OFFSET
+                y = TEXT_Y_START + 8
                 for i in range(3):
                     idx = scroll_offset + i
                     if idx < len(hourly):
@@ -799,7 +801,7 @@ def show_today_pattern(data):
                             hour_12 = hour_24 - 12
                             am_pm = "PM"
                         
-                        Draw.text((0, y), f"{hour_12:2d}{am_pm}:{int(occ*100)}%", font=Font, fill=1)
+                        Draw.text((TEXT_X_OFFSET, y), f"{hour_12:2d}{am_pm}:{int(occ*100)}%", font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
@@ -902,17 +904,17 @@ def show_weekly_comparison(data):
                     scroll_indicator = f"WEEKLY [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
                     scroll_indicator = "WEEKLY"
-                Draw.text((0, 0 + TEXT_Y_OFFSET), scroll_indicator[:16], font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 days starting from scroll_offset
-                y = 8 + TEXT_Y_OFFSET
+                y = TEXT_Y_START + 8
                 for i in range(3):
                     idx = scroll_offset + i
                     if idx < len(weekly):
                         day_data = weekly[idx]
                         day_name = day_data.get('day', '')[:3]  # Mon, Tue, etc
                         occ = day_data.get('occupancy', 0)
-                        Draw.text((0, y), f"{day_name}:{int(occ*100)}%", font=Font, fill=1)
+                        Draw.text((TEXT_X_OFFSET, y), f"{day_name}:{int(occ*100)}%", font=Font, fill=1)
                         y += 8
                 
                 # Show once at the end - add small delay to ensure display is ready
@@ -1003,14 +1005,14 @@ def show_weather_details(data):
             Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
             
             # Line 1: Title
-            Draw.text((0, 0 + TEXT_Y_OFFSET), "WEATHER", font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START), "WEATHER", font=Font, fill=1)
             # Line 2: Temperature and Humidity
-            Draw.text((0, 8 + TEXT_Y_OFFSET), f"T:{temp}C H:{humidity}%", font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), f"T:{temp}C H:{humidity}%", font=Font, fill=1)
             # Line 3: UV and Comfort (compact to fit)
-            Draw.text((0, 16 + TEXT_Y_OFFSET), f"UV:{uv} C:{comfort}/5", font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 16), f"UV:{uv} C:{comfort}/5", font=Font, fill=1)
             # Line 4: Air Quality (if OLED_HEIGHT >= 32, which it is - 128x64)
             aq_short = aq_display[:4] if len(aq_display) > 4 else aq_display
-            Draw.text((0, 24 + TEXT_Y_OFFSET), f"AQ:{aq_short}", font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 24), f"AQ:{aq_short}", font=Font, fill=1)
             
             # Show once at the end - add small delay to ensure display is ready
             time.sleep(0.01)  # 10ms delay before show()
@@ -1072,7 +1074,7 @@ def show_alternatives(data):
                 scroll_indicator = f"OTHERS [{scroll_offset+1}/{max_items}]"
             else:
                 scroll_indicator = "OTHERS"
-            Draw.text((0, 0 + TEXT_Y_OFFSET), scroll_indicator[:16], font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
             
             # Show alternative at scroll_offset
             if scroll_offset < len(alternatives):
@@ -1081,11 +1083,11 @@ def show_alternatives(data):
                 people = alt.get('people', 0)
                 status = alt.get('status', 'unknown')[:3]  # Short status
                 # Line 2: Court name and status
-                Draw.text((0, 8 + TEXT_Y_OFFSET), f"{name}:{status}", font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), f"{name}:{status}", font=Font, fill=1)
                 # Line 3: People count
-                Draw.text((0, 16 + TEXT_Y_OFFSET), f"PPL:{people}", font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 16), f"PPL:{people}", font=Font, fill=1)
             else:
-                Draw.text((0, 8 + TEXT_Y_OFFSET), "None", font=Font, fill=1)
+                Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), "None", font=Font, fill=1)
             
             # Show once at the end - add small delay to ensure display is ready
             time.sleep(0.01)  # 10ms delay before show()
@@ -1197,14 +1199,14 @@ def show_court_info(data):
                 scroll_indicator = f"INFO [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
             else:
                 scroll_indicator = "INFO"
-            Draw.text((0, 0 + TEXT_Y_OFFSET), scroll_indicator[:16], font=Font, fill=1)
+            Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
             
             # Show 3 lines starting from scroll_offset
-            y = 8 + TEXT_Y_OFFSET
+            y = TEXT_Y_START + 8
             for i in range(3):
                 idx = scroll_offset + i
                 if idx < len(info_lines):
-                    Draw.text((0, y), info_lines[idx], font=Font, fill=1)
+                    Draw.text((TEXT_X_OFFSET, y), info_lines[idx], font=Font, fill=1)
                     y += 8
             
             # Show once at the end - add small delay to ensure display is ready
@@ -1685,9 +1687,9 @@ def handle_button_press(button_id):
                     ImageObj = Image.new("1", (Display.width, Display.height))
                     Draw = ImageDraw.Draw(ImageObj)
                     Draw.rectangle((0, 0, Display.width - 1, Display.height - 1), outline=0, fill=0)
-                    Draw.text((0, 0 + TEXT_Y_OFFSET), "NO DATA", font=Font, fill=1)
-                    Draw.text((0, 8 + TEXT_Y_OFFSET), f"View: {current_view[:8]}", font=Font, fill=1)
-                    Draw.text((0, 16 + TEXT_Y_OFFSET), "Waiting...", font=Font, fill=1)
+                    Draw.text((TEXT_X_OFFSET, TEXT_Y_START), "NO DATA", font=Font, fill=1)
+                    Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 8), f"View: {current_view[:8]}", font=Font, fill=1)
+                    Draw.text((TEXT_X_OFFSET, TEXT_Y_START + 16), "Waiting...", font=Font, fill=1)
                     Display.image(ImageObj)
                     Display.show()
                 except Exception as e:
