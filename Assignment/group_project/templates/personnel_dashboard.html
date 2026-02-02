@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="{{ url_for('static', filename='loop-1-svgrepo-com.svg') }}" type="image/svg+xml" />
   <title>Smart Sports Dashboard - Personnel</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -776,7 +777,7 @@
         <div class="cardHeader">
           <div>
             <p class="title">Crowd Detection (Module 1)</p>
-            <p class="subtitle">People + sensors</p>
+            <p class="subtitle">People + sensors · Last update: <span class="mono" id="m1-last-update">—</span></p>
           </div>
           <span class="badge muted" id="m1-status">Offline</span>
         </div>
@@ -816,7 +817,7 @@
         <div class="cardHeader">
           <div>
             <p class="title">Environment (Module 2)</p>
-            <p class="subtitle">Conditions</p>
+            <p class="subtitle">Conditions · Last update: <span class="mono" id="m2-last-update">—</span></p>
           </div>
           <span class="badge muted" id="m2-status">Offline</span>
         </div>
@@ -829,7 +830,7 @@
         <div class="cardHeader">
           <div>
             <p class="title">Feedback (Module 3)</p>
-            <p class="subtitle">Latest entry</p>
+            <p class="subtitle">Latest entry · Last update: <span class="mono" id="m3-last-update">—</span></p>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
             <span id="m3-kiosk-status" style="font-size: 0.75em; padding: 4px 8px; border-radius: 4px; background: #e5e7eb; color: #6b7280;">
@@ -977,6 +978,8 @@
       connectedModules: { crowd_detection: [], environment: [], feedback: [] },
       latestModule5: null,
       latestCrowdData: null,  // Store latest crowd data to merge fields
+      lastUpdateTimestamp: null,  // When we last received any module data (for "time since last update")
+      m5LastUpdateTimestamp: null,  // When M5 data was last updated (ISO or null)
       msgCount: 0,
       mockActive: false,
       mockScenario: "normal",
@@ -1001,7 +1004,10 @@
       ratingDistribution: null,  // Store latest rating distribution data
       module3: {
         lastRatingTimestamp: null,  // ISO timestamp string
-        latestRating: null
+        latestRating: null,
+        ratingDistribution: null,
+        totalRatings: 0,
+        averageRating: null
       },
       health: {
         m1: { lastSeen: 0, source: null, mode: "idle" }, // idle|active|mock
@@ -1090,10 +1096,55 @@
       el.setAttribute("aria-checked", on ? "true" : "false");
     }
 
+    function formatTimeAgo(ms){
+      if(ms == null || ms <= 0) return "—";
+      const sec = Math.floor(ms / 1000);
+      if(sec < 60) return sec + "s ago";
+      if(sec < 3600) return Math.floor(sec / 60) + "m ago";
+      if(sec < 86400) return Math.floor(sec / 3600) + "h ago";
+      return Math.floor(sec / 86400) + "d ago";
+    }
+
+    function refreshLastUpdateDisplay(){
+      const el = document.getElementById("last-update");
+      if(el && state.lastUpdateTimestamp){
+        el.textContent = formatTimeAgo(Date.now() - state.lastUpdateTimestamp);
+      }
+      const m5El = document.getElementById("m5-last-update");
+      if(m5El && state.m5LastUpdateTimestamp){
+        const raw = state.m5LastUpdateTimestamp;
+        let ms = null;
+        if (typeof raw === "number") {
+          ms = raw;
+        } else {
+          const parsed = parseUtc(raw);
+          ms = parsed && typeof parsed.getTime === "function" ? parsed.getTime() : null;
+        }
+        if (ms != null && !isNaN(ms)) {
+          m5El.textContent = formatTimeAgo(Date.now() - ms);
+        }
+      }
+      // Per-module time since last update (M1, M2, M3)
+      const m1El = document.getElementById("m1-last-update");
+      if(m1El){
+        m1El.textContent = state.health.m1.lastSeen ? formatTimeAgo(Date.now() - state.health.m1.lastSeen) : "—";
+      }
+      const m2El = document.getElementById("m2-last-update");
+      if(m2El){
+        m2El.textContent = state.health.m2.lastSeen ? formatTimeAgo(Date.now() - state.health.m2.lastSeen) : "—";
+      }
+      const m3El = document.getElementById("m3-last-update");
+      if(m3El){
+        m3El.textContent = state.health.m3.lastSeen ? formatTimeAgo(Date.now() - state.health.m3.lastSeen) : "—";
+      }
+    }
+
     function bumpMsg(){
       state.msgCount += 1;
+      state.lastUpdateTimestamp = Date.now();
       document.getElementById("kpi-msg").textContent = String(state.msgCount);
-      document.getElementById("last-update").textContent = nowTime();
+      document.getElementById("last-update").textContent = "just now";
+      refreshLastUpdateDisplay();
     }
 
     function updateKpis(){
@@ -1156,6 +1207,7 @@
           clearField("m5-wait", "—");
           clearField("m5-confidence", "—");
           clearField("m5-last-update", "—");
+          state.m5LastUpdateTimestamp = null;
           clearField("m5-temp", "—");
           clearField("m5-humidity", "—");
           clearField("m5-uv", "—");
@@ -1218,7 +1270,19 @@
       document.getElementById("m5-people").textContent = String(current.people_count ?? "—");
       document.getElementById("m5-wait").textContent = current.estimated_wait_min != null ? `${current.estimated_wait_min} min` : "—";
       document.getElementById("m5-confidence").textContent = current.confidence != null ? `${Math.round(Number(current.confidence) * 100)}%` : "—";
-      document.getElementById("m5-last-update").textContent = current.last_update || "—";
+      // Show how long since last update (relative time, updates periodically)
+      const lastUp = current.last_update;
+      if(lastUp && (/just now/i.test(lastUp) || /^\d{1,2}(s|m|h|d)\s+ago$/i.test(lastUp))) {
+        state.m5LastUpdateTimestamp = Date.now();
+      } else if(lastUp && /^\d{4}-\d{2}-\d{2}T/.test(String(lastUp))) {
+        state.m5LastUpdateTimestamp = lastUp;
+      } else if(lastUp) {
+        state.m5LastUpdateTimestamp = Date.now();
+      } else {
+        state.m5LastUpdateTimestamp = null;
+      }
+      document.getElementById("m5-last-update").textContent = lastUp ? (/just now/i.test(lastUp) ? "just now" : lastUp) : "—";
+      refreshLastUpdateDisplay();
 
       // Weather section
       document.getElementById("m5-temp").textContent = weather.temp_c != null ? `${weather.temp_c}°C` : "—";
@@ -1490,6 +1554,9 @@
           // Render rating distribution chart (bar chart in module stats)
           if(chartElement && stats.rating_distribution) {
             renderRatingChart(chartElement, stats.rating_distribution, stats.total_ratings);
+            state.module3.ratingDistribution = stats.rating_distribution;
+            state.module3.totalRatings = stats.total_ratings || 0;
+            state.module3.averageRating = stats.average_rating;
           }
 
           // Update pie chart with rating distribution
@@ -2262,6 +2329,32 @@
       if(snapshot && snapshot.feedback && snapshot.feedback.length){
         renderFeedback(snapshot.feedback[snapshot.feedback.length - 1]);
       }
+      if(snapshot && snapshot.module3_statistics) {
+        const stats = snapshot.module3_statistics;
+        const statsContainer = document.getElementById("m3-stats");
+        const chartElement = document.getElementById("m3-chart");
+        const avgEl = document.getElementById("m3-average");
+        const totalEl = document.getElementById("m3-total");
+        const latestEl = document.getElementById("m3-latest-rating");
+        const lastIntEl = document.getElementById("m3-last-interaction");
+        if(statsContainer) statsContainer.style.display = "block";
+        if(avgEl) avgEl.textContent = stats.average_rating != null ? stats.average_rating.toFixed(2) : "—";
+        if(totalEl) totalEl.textContent = stats.total_ratings || 0;
+        if(latestEl && stats.latest_rating != null) {
+          latestEl.innerHTML = "★".repeat(Math.max(0, Number(stats.latest_rating))) + " <span style=\"font-size: 0.6em; color: var(--muted);\">(" + stats.latest_rating + "/5)</span>";
+          latestEl.style.color = stats.latest_rating >= 4 ? "#10b981" : stats.latest_rating >= 3 ? "#f59e0b" : "#ef4444";
+        }
+        if(lastIntEl) lastIntEl.textContent = stats.time_since_last_rating || "Never";
+        if(stats.last_rating_timestamp) state.module3.lastRatingTimestamp = stats.last_rating_timestamp;
+        if(stats.latest_rating != null) state.module3.latestRating = stats.latest_rating;
+        if(stats.rating_distribution) {
+          state.module3.ratingDistribution = stats.rating_distribution;
+          state.module3.totalRatings = stats.total_ratings || 0;
+          state.module3.averageRating = stats.average_rating;
+          if(chartElement) renderRatingChart(chartElement, stats.rating_distribution, stats.total_ratings || 0);
+        }
+      }
+      if(snapshot && snapshot.module5) updateModule5Preview(snapshot.module5);
     });
 
     socket.on("module_connected", (data) => {
@@ -2321,6 +2414,36 @@
       } else {
         console.warn("DisplayUpdate received but data is null/undefined");
       }
+    });
+
+    socket.on("module_disconnected", (data) => {
+      const module_type = data && data.module_type ? data.module_type : null;
+      const module_id = data && data.module_id ? data.module_id : null;
+      if(module_type && module_id && state.connectedModules[module_type]) {
+        state.connectedModules[module_type] = state.connectedModules[module_type].filter(id => id !== module_id);
+        updateKpis();
+      }
+      if(module_type === "crowd_detection") {
+        state.health.m1.mode = "idle";
+        state.health.m1.lastSeen = 0;
+        setModuleStatus("m1-status", "idle");
+      } else if(module_type === "environment") {
+        state.health.m2.mode = "idle";
+        state.health.m2.lastSeen = 0;
+        setModuleStatus("m2-status", "idle");
+      } else if(module_type === "feedback") {
+        state.health.m3.mode = "idle";
+        state.health.m3.lastSeen = 0;
+        setModuleStatus("m3-status", "idle");
+      } else if(module_type === "display") {
+        state.health.m5.mode = "idle";
+        state.health.m5.lastSeen = 0;
+        document.getElementById("kpi-m5").textContent = "Waiting";
+        setDot("dot-m5", "offline");
+        const dbgM5 = document.getElementById("dbg-m5");
+        if (dbgM5) dbgM5.textContent = "—";
+      }
+      log(`Module disconnected (timeout): ${module_id} (${module_type})`);
     });
     
     // Module 5 display connection events
@@ -2562,14 +2685,33 @@
         }
       }
       
-      // Update latest rating and time since last interaction if available
+      // Update latest rating and time since last interaction; show ratings bar graph persistently when idle
       const statsContainer = document.getElementById("m3-stats");
       const latestRatingElement = document.getElementById("m3-latest-rating");
       const lastInteractionElement = document.getElementById("m3-last-interaction");
+      const chartElement = document.getElementById("m3-chart");
+      const avgElement = document.getElementById("m3-average");
+      const totalElement = document.getElementById("m3-total");
       
-      // Show stats container if we have rating data
-      if(statsContainer && (data.latest_rating !== null && data.latest_rating !== undefined || data.time_since_last_rating)) {
+      const hasRatingData = data.latest_rating !== null && data.latest_rating !== undefined || data.time_since_last_rating;
+      if(statsContainer && (hasRatingData || (data.statistics && data.statistics.rating_distribution && data.statistics.total_ratings))) {
         statsContainer.style.display = "block";
+      }
+      
+      if(data.statistics) {
+        const st = data.statistics;
+        if(avgElement) avgElement.textContent = st.average_rating != null ? st.average_rating.toFixed(2) : "—";
+        if(totalElement) totalElement.textContent = st.total_ratings || 0;
+        if(st.rating_distribution && chartElement) {
+          renderRatingChart(chartElement, st.rating_distribution, st.total_ratings || 0);
+          state.module3.ratingDistribution = st.rating_distribution;
+          state.module3.totalRatings = st.total_ratings || 0;
+          state.module3.averageRating = st.average_rating;
+        }
+      } else if(statsContainer && state.module3.ratingDistribution != null) {
+        if(chartElement) renderRatingChart(chartElement, state.module3.ratingDistribution, state.module3.totalRatings || 0);
+        if(avgElement && state.module3.averageRating != null) avgElement.textContent = state.module3.averageRating.toFixed(2);
+        if(totalElement) totalElement.textContent = state.module3.totalRatings || 0;
       }
       
       if(latestRatingElement && data.latest_rating !== null && data.latest_rating !== undefined) {
@@ -2582,10 +2724,7 @@
         if(data.time_since_last_rating) {
           lastInteractionElement.textContent = data.time_since_last_rating;
           lastInteractionElement.style.color = "var(--text)";
-          // Store timestamp for periodic updates
-          if(data.last_rating_timestamp) {
-            state.module3.lastRatingTimestamp = data.last_rating_timestamp;
-          }
+          if(data.last_rating_timestamp) state.module3.lastRatingTimestamp = data.last_rating_timestamp;
         } else {
           lastInteractionElement.textContent = "Never";
           lastInteractionElement.style.color = "var(--textMuted)";
@@ -2593,7 +2732,6 @@
         }
       }
       
-      // Store latest rating in state
       if(data.latest_rating !== null && data.latest_rating !== undefined) {
         state.module3.latestRating = data.latest_rating;
       }
@@ -2806,7 +2944,8 @@
       setInterval(loadActivityLog, 15000);
       log("Dashboard ready");
 
-      // Real-time updates handled via Socket.IO events - no polling needed
+      // Refresh "time since last update" every 5s so it counts up (e.g. "2m ago")
+      setInterval(refreshLastUpdateDisplay, 5000);
 
       // Health tick: if no recent data, show Idle instead of sticking on Active.
       setModuleStatus("m1-status", "idle");

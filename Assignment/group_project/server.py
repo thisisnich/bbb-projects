@@ -563,7 +563,7 @@ def save_minute_averages():
         # This is handled separately in handle_feedback_data
 
 def write_crowd_to_db(data_dict):
-    """Write crowd data directly to crowd.db"""
+    """Write crowd data directly to crowd.db. Always uses server UTC for timestamp."""
     try:
         conn = sqlite3.connect(CROWD_DB)
         cursor = conn.cursor()
@@ -572,7 +572,7 @@ def write_crowd_to_db(data_dict):
             (timestamp, people_count, noise_db, crowd_level, confidence, motion_detected, proximity_triggered)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', utc_iso()),
+            utc_iso(),
             data_dict.get('people_count'),
             data_dict.get('noise_db'),
             data_dict.get('crowd_level'),
@@ -586,7 +586,7 @@ def write_crowd_to_db(data_dict):
         print(f"[ERROR] Failed to write crowd data to database: {e}")
 
 def write_env_to_db(data_dict):
-    """Write environment data directly to env.db"""
+    """Write environment data directly to env.db. Always uses server UTC for timestamp."""
     try:
         conn = sqlite3.connect(ENV_DB)
         cursor = conn.cursor()
@@ -595,7 +595,7 @@ def write_env_to_db(data_dict):
             (timestamp, temperature_c, humidity_percent, pressure_hpa, uv_index, voc_level, comfort_score)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', utc_iso()),
+            utc_iso(),
             data_dict.get('temperature_c'),
             data_dict.get('humidity_percent'),
             data_dict.get('pressure_hpa'),
@@ -609,7 +609,7 @@ def write_env_to_db(data_dict):
         print(f"[ERROR] Failed to write environment data to database: {e}")
 
 def write_rating_to_db(data_dict):
-    """Write rating/feedback data directly to rating.db"""
+    """Write rating/feedback data directly to rating.db. Always uses server UTC for timestamp."""
     try:
         conn = sqlite3.connect(RATING_DB)
         cursor = conn.cursor()
@@ -618,7 +618,7 @@ def write_rating_to_db(data_dict):
             (timestamp, rating, report_type, question_text, text_response, issue_category)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            data_dict.get('timestamp', utc_iso()),
+            utc_iso(),
             data_dict.get('rating'),
             data_dict.get('report_type'),
             data_dict.get('question_text'),
@@ -659,6 +659,90 @@ def start_rollups_retention_thread():
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
     print("[INFO] Rollups and retention thread started (hourly)")
+
+# Module 5 periodic push interval (seconds)
+MODULE5_UPDATE_INTERVAL = 30
+
+def emit_module5_display_update(court_id='basketball_a'):
+    """Generate Module 5 data from current/historical Modules 1–3 and emit DisplayUpdate to all (including Module 5 displays)."""
+    try:
+        crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
+        env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
+        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+        module5_data = generate_module5_from_modules(
+            court_id=court_id,
+            crowd_data=crowd_data_for_module5,
+            env_data=env_data_for_module5,
+            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
+        )
+        socketio.emit('DisplayUpdate', module5_data)
+        if display_module_sockets:
+            for socket_id, module_id in display_module_sockets.items():
+                try:
+                    socketio.emit('DisplayUpdate', module5_data, room=socket_id)
+                except Exception as e:
+                    print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
+    except Exception as e:
+        print(f"[WARNING] Module 5 periodic emit: {e}")
+
+def start_module5_periodic_thread():
+    """Start background thread that pushes Module 5 data to displays periodically."""
+    def loop():
+        while True:
+            time.sleep(MODULE5_UPDATE_INTERVAL)
+            emit_module5_display_update()
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    print(f"[INFO] Module 5 periodic push started (every {MODULE5_UPDATE_INTERVAL}s)")
+
+# How long without data before a module is marked disconnected (seconds)
+CONNECTION_TIMEOUT_SEC = 90
+CONNECTION_CHECK_INTERVAL_SEC = 60
+
+def check_stale_connections():
+    """Mark modules as disconnected if we haven't received data in CONNECTION_TIMEOUT_SEC."""
+    now = datetime.now(timezone.utc)
+    for module_type in ('crowd_detection', 'environment', 'feedback'):
+        if module_type not in connected_modules or module_type not in module_status:
+            continue
+        for module_id in list(connected_modules[module_type]):
+            info = module_status[module_type].get(module_id) or {}
+            last_seen_str = info.get('last_seen')
+            if not last_seen_str:
+                continue
+            try:
+                last_seen = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
+                if last_seen.tzinfo is None:
+                    last_seen = last_seen.replace(tzinfo=timezone.utc)
+                age_sec = (now - last_seen).total_seconds()
+                if age_sec >= CONNECTION_TIMEOUT_SEC:
+                    if module_id in connected_modules[module_type]:
+                        connected_modules[module_type].remove(module_id)
+                    update_module_status(module_type, module_id, is_online=False)
+                    add_connection_event(module_id, module_type, 'disconnected')
+                    write_log('INFO', f'Module {module_id} ({module_type}) marked disconnected (no data for {int(age_sec)}s)', 'connection')
+                    socketio.emit('module_disconnected', {
+                        'module_id': module_id,
+                        'module_type': module_type,
+                        'reason': 'timeout',
+                        'age_seconds': int(age_sec)
+                    })
+                    print(f"[{datetime.now()}] Module {module_id} ({module_type}) marked disconnected (no data for {int(age_sec)}s)")
+            except Exception as e:
+                print(f"[WARNING] check_stale_connections: {e}")
+
+def start_connection_check_thread():
+    """Start background thread that periodically marks stale modules as disconnected."""
+    def loop():
+        while True:
+            time.sleep(CONNECTION_CHECK_INTERVAL_SEC)
+            try:
+                check_stale_connections()
+            except Exception as e:
+                print(f"[WARNING] Connection check thread: {e}")
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    print(f"[INFO] Connection check thread started (every {CONNECTION_CHECK_INTERVAL_SEC}s, timeout {CONNECTION_TIMEOUT_SEC}s)")
 
 def get_history_from_db(module, start_date=None, end_date=None, limit=1000):
     """Query historical data from database
@@ -993,6 +1077,30 @@ def get_crowd_history_last_hours(hours=12):
             continue
     return {'entries': filtered}
 
+def get_crowd_history_last_days(days=7):
+    """Return crowd history filtered to the last N days (for hourly averages over last few days)."""
+    history = load_crowd_history()
+    entries = history.get('entries', [])
+    if days <= 0 or not entries:
+        return {'entries': entries}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    filtered = []
+    for entry in entries:
+        ts_str = entry.get('timestamp', '').replace('Z', '+00:00')
+        if not ts_str:
+            continue
+        try:
+            entry_dt = datetime.fromisoformat(ts_str)
+            if entry_dt.tzinfo is None:
+                entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+            else:
+                entry_dt = entry_dt.astimezone(timezone.utc)
+            if entry_dt >= cutoff:
+                filtered.append(entry)
+        except (ValueError, TypeError):
+            continue
+    return {'entries': filtered}
+
 def update_history(people_count, timestamp=None):
     """Legacy function - updates crowd history for backward compatibility"""
     return add_crowd_entry(people_count, timestamp)
@@ -1166,6 +1274,38 @@ def get_weekly_pattern(history, current_hour, current_people_count, capacity=10)
     
     return week_same_time
 
+def get_hourly_avg_last_days(history, current_hour, current_people_count, capacity=10):
+    """Calculate hourly average occupancy over the last N days (all days in history).
+    Returns same format as today_hourly: list of {hour, occupancy, people_count} for hours 8-22.
+    Module 5 display can show 'hourly averages over the last few days'.
+    """
+    hourly_avg = []
+    hour_entries = defaultdict(list)  # hour -> list of people_count
+    if 'entries' in history:
+        for entry in history['entries']:
+            entry_timestamp = entry.get('timestamp', '').replace('Z', '+00:00')
+            if not entry_timestamp:
+                continue
+            try:
+                entry_dt = datetime.fromisoformat(entry_timestamp)
+                if entry_dt.tzinfo is None:
+                    entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+                h = entry_dt.hour
+                if 8 <= h < 22:
+                    hour_entries[h].append(entry.get('people_count', 0))
+            except (ValueError, TypeError):
+                continue
+    for hour in range(8, 22):
+        counts = hour_entries[hour]
+        if counts:
+            avg_people = sum(counts) / len(counts)
+            occupancy = min(1.0, max(0.0, avg_people / capacity))
+            hourly_avg.append({'hour': hour, 'occupancy': occupancy, 'people_count': int(round(avg_people))})
+        else:
+            # No data for this hour - include with 0 so client can show empty bar
+            hourly_avg.append({'hour': hour, 'occupancy': 0.0, 'people_count': 0})
+    return hourly_avg
+
 # Initialize all historical data on startup
 historical_data = load_crowd_history()
 crowd_entry_count = len(historical_data.get('entries', []))
@@ -1197,6 +1337,8 @@ else:
 # Start minute-based averaging thread
 start_minute_averaging_thread()
 start_rollups_retention_thread()
+start_module5_periodic_thread()
+start_connection_check_thread()
 try:
     run_rollups_and_retention()
 except Exception:
@@ -1316,6 +1458,59 @@ def save_module3_state():
     """Save module3 state to persistent storage"""
     module_states['module3_state'] = module3_state
     save_module_states(module_states)
+
+def get_module3_statistics():
+    """Compute Module 3 stats (average, distribution, latest) from current_data or rating.db for persistent display when idle."""
+    ratings = []
+    for feedback in current_data.get('feedback', []):
+        if feedback.get('data', {}).get('report_type') == 'rating':
+            r = feedback.get('data', {}).get('rating')
+            if r is not None:
+                ratings.append(r)
+    if not ratings and os.path.exists(RATING_DB):
+        try:
+            conn = sqlite3.connect(RATING_DB)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT rating FROM rating_data WHERE report_type = 'rating' AND rating IS NOT NULL
+                ORDER BY timestamp DESC LIMIT 500
+            ''')
+            ratings = [row[0] for row in cursor.fetchall()]
+            conn.close()
+        except Exception as e:
+            print(f"[WARNING] get_module3_statistics from rating.db: {e}")
+    average_rating = None
+    total_ratings = len(ratings)
+    if total_ratings > 0:
+        average_rating = round(sum(ratings) / total_ratings, 2)
+    rating_distribution = {}
+    for r in ratings:
+        rating_distribution[r] = rating_distribution.get(r, 0) + 1
+    time_since_last_rating = None
+    if module3_state.get('last_rating_timestamp'):
+        try:
+            last_rating_dt = datetime.fromisoformat(module3_state['last_rating_timestamp'].replace('Z', '+00:00'))
+            now = datetime.now(last_rating_dt.tzinfo) if last_rating_dt.tzinfo else datetime.now(timezone.utc)
+            time_diff = (now - last_rating_dt).total_seconds()
+            if time_diff < 60:
+                time_since_last_rating = f"{int(time_diff)}s ago"
+            elif time_diff < 3600:
+                time_since_last_rating = f"{int(time_diff // 60)}m ago"
+            elif time_diff < 86400:
+                time_since_last_rating = f"{int(time_diff // 3600)}h ago"
+            else:
+                time_since_last_rating = f"{int(time_diff // 86400)}d ago"
+        except Exception:
+            pass
+    return {
+        'average_rating': average_rating,
+        'total_ratings': total_ratings,
+        'rating_distribution': rating_distribution,
+        'latest_rating': module3_state.get('latest_rating'),
+        'last_rating_timestamp': module3_state.get('last_rating_timestamp'),
+        'time_since_last_rating': time_since_last_rating,
+        'kiosk_active': module3_state.get('kiosk_active', False)
+    }
 
 # --- Mock Mode State ---
 mock_state = {
@@ -2395,8 +2590,8 @@ def get_chart_crowd_data():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get data from last N hours
-        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        # Get data from last N hours (UTC to match DB timestamps)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace('+00:00', 'Z')
         cursor.execute('''
             SELECT timestamp, people_count, noise_db, crowd_level, confidence
             FROM crowd_data
@@ -2432,8 +2627,8 @@ def get_chart_env_data():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get data from last N hours
-        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        # Get data from last N hours (UTC to match DB timestamps)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace('+00:00', 'Z')
         cursor.execute('''
             SELECT timestamp, temperature_c, humidity_percent, uv_index, comfort_score, voc_level
             FROM env_data
@@ -2469,8 +2664,8 @@ def get_chart_rating_data():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get data from last N days
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        # Get data from last N days (UTC to match DB timestamps)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace('+00:00', 'Z')
         cursor.execute('''
             SELECT timestamp, rating, report_type
             FROM rating_data
@@ -2510,6 +2705,8 @@ def handle_module_register(data):
             connected_modules[module_type].append(module_id)
             # Save connection event to history
             add_connection_event(module_id, module_type, 'connected')
+        # Track last_seen so periodic check can mark as disconnected if no data
+        update_module_status(module_type, module_id, is_online=True)
         print(f"[{datetime.now()}] Module registered: {module_id} ({module_type})")
         
         # Track display module sockets
@@ -2601,34 +2798,10 @@ def handle_crowd_data(data):
     
     socketio.emit('crowd_update', data)
     
-    # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
+    # Every time dashboard data updates, send latest to Module 5
     court_id = data.get('court_id', 'basketball_a')
-    # Use historical data as fallback if current data is missing
-    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
-    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
-    
-    module5_data = generate_module5_from_modules(
-        court_id=court_id,
-        crowd_data=data,
-        env_data=env_data_for_module5,
-        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
-    )
-    
-    # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
-    connected_display_count = len(connected_modules['display'])
-    print(f"[{datetime.now()}] Broadcasting DisplayUpdate from Module 1 to all clients ({connected_display_count} Module 5 displays connected)")
-    socketio.emit('DisplayUpdate', module5_data)
-    
-    # Also send directly to registered display module sockets if any
-    if display_module_sockets:
-        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
-        for socket_id, module_id in display_module_sockets.items():
-            try:
-                socketio.emit('DisplayUpdate', module5_data, room=socket_id)
-            except Exception as e:
-                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
-    
-    print(f"[{datetime.now()}] Module 5 data generated from Module 1 data and sent to dashboard")
+    emit_module5_display_update(court_id=court_id)
+    print(f"[{datetime.now()}] Module 5 updated from Module 1 data")
 
 @socketio.on('CrowdVideoFrameEvent')
 def handle_crowd_video(data):
@@ -2776,18 +2949,9 @@ def handle_crowd_video(data):
                     socketio.emit('crowd_update', current_data['crowd'])
                     print(f"[{datetime.now()}] Emitted crowd_update with {people_count} people")
                     
-                    # Generate and send Module 5 data
+                    # Every time dashboard data updates, send latest to Module 5
                     court_id = data.get('court_id', 'basketball_a')
-                    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
-                    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
-                    
-                    module5_data = generate_module5_from_modules(
-                        court_id=court_id,
-                        crowd_data=current_data['crowd'],
-                        env_data=env_data_for_module5,
-                        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
-                    )
-                    socketio.emit('DisplayUpdate', module5_data)
+                    emit_module5_display_update(court_id=court_id)
                     
                 except Exception as e:
                     print(f"[{datetime.now()}] ERROR: Background OpenCV analysis failed: {e}")
@@ -2991,19 +3155,8 @@ def handle_crowd_video(data):
     # This ensures Module 5 gets updated when video frame data arrives
     if 'data' in data and data['data']:
         court_id = data.get('court_id', 'basketball_a')
-        # Use current crowd data (which may have been updated above) with historical fallback
-        crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
-        env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
-        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
-        
-        module5_data = generate_module5_from_modules(
-            court_id=court_id,
-            crowd_data=crowd_data_for_module5,
-            env_data=env_data_for_module5,
-            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
-        )
-        socketio.emit('DisplayUpdate', module5_data)
-        print(f"[{datetime.now()}] Module 5 data generated from Module 1 video frame and sent to dashboard")
+        emit_module5_display_update(court_id=court_id)
+        print(f"[{datetime.now()}] Module 5 updated from Module 1 video frame")
 
 # --- MODULE 2: ENVIRONMENT DATA ---
 @socketio.on('EnvironmentDataEvent')
@@ -3061,32 +3214,9 @@ def handle_environment_data(data):
     
     # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
     court_id = data.get('court_id', 'basketball_a')
-    # Use historical data as fallback if current data is missing
-    crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
-    feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
-    
-    module5_data = generate_module5_from_modules(
-        court_id=court_id,
-        crowd_data=crowd_data_for_module5,
-        env_data=data,
-        feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
-    )
-    
-    # Emit DisplayUpdate to all clients (including preview and Module 5 displays)
-    connected_display_count = len(connected_modules['display'])
-    print(f"[{datetime.now()}] Broadcasting DisplayUpdate from Module 2 to all clients ({connected_display_count} Module 5 displays connected)")
-    socketio.emit('DisplayUpdate', module5_data)
-    
-    # Also send directly to registered display module sockets if any
-    if display_module_sockets:
-        print(f"[{datetime.now()}] Sending DisplayUpdate to {len(display_module_sockets)} registered display sockets")
-        for socket_id, module_id in display_module_sockets.items():
-            try:
-                socketio.emit('DisplayUpdate', module5_data, room=socket_id)
-            except Exception as e:
-                print(f"[WARNING] Failed to send to display socket {socket_id} ({module_id}): {e}")
-    
-    print(f"[{datetime.now()}] Module 5 data generated from Module 2 data and sent to dashboard")
+    # Every time dashboard data updates, send latest to Module 5
+    emit_module5_display_update(court_id=court_id)
+    print(f"[{datetime.now()}] Module 5 updated from Module 2 data")
 
 # --- MODULE 3: FEEDBACK DATA ---
 @socketio.on('FeedbackStatusEvent')
@@ -3124,7 +3254,8 @@ def handle_feedback_status(data):
         except Exception as e:
             print(f"[WARNING] Error calculating time since last rating: {e}")
     
-    # Emit status update to dashboard
+    # Emit status update to dashboard (include statistics so bar graph persists when idle)
+    stats = get_module3_statistics()
     socketio.emit('feedback_status_update', {
         'module_id': module_id,
         'status': status,
@@ -3134,8 +3265,11 @@ def handle_feedback_status(data):
         'timestamp': utc_iso(),
         'last_rating_timestamp': module3_state['last_rating_timestamp'],
         'latest_rating': module3_state['latest_rating'],
-        'time_since_last_rating': time_since_last_rating
+        'time_since_last_rating': time_since_last_rating,
+        'statistics': stats
     })
+    # Every time dashboard updates (e.g. kiosk status), send latest to Module 5
+    emit_module5_display_update()
 
 @socketio.on('FeedbackDataEvent')
 def handle_feedback_data(data):
@@ -3151,7 +3285,8 @@ def handle_feedback_data(data):
     update_module_status('feedback', module_id, is_online=True)
     update_module_location(module_id, 'feedback', data.get('court_id', ''), request.remote_addr or '')
     
-    # Save to persistent storage with full historical records
+    # Save to persistent storage with full historical records.
+    # Use server UTC for rating.db so timestamps match env.db (client timestamps can be local/timezone-wrong).
     timestamp_str = data.get('timestamp')
     if timestamp_str:
         try:
@@ -3168,9 +3303,9 @@ def handle_feedback_data(data):
     rating = feedback_data.get('rating')
     write_log('INFO', f'Feedback: {report_type}' + (f' rating={rating}' if rating is not None else ''), 'feedback')
     
-    # Write directly to rating.db
+    # Write directly to rating.db — always use server UTC so rating timestamps match env.db (no client TZ drift).
     write_rating_to_db({
-        'timestamp': to_utc_iso(timestamp) if hasattr(timestamp, 'tzinfo') else (timestamp if isinstance(timestamp, str) else utc_iso()),
+        'timestamp': utc_iso(),
         'rating': feedback_data.get('rating'),
         'report_type': feedback_data.get('report_type'),
         'question_text': feedback_data.get('question_text'),
@@ -3239,23 +3374,10 @@ def handle_feedback_data(data):
     
     socketio.emit('feedback_update', update_data)
     
-    # Generate and send Module 5 data based on current Modules 1-3 data (with historical fallback)
-    # Use historical data as fallback if current data is missing
-    crowd_data_for_module5 = current_data.get('crowd') or get_latest_crowd_data()
-    env_data_for_module5 = current_data.get('environment') or get_latest_environment_data()
-    
-    if crowd_data_for_module5 or env_data_for_module5:
-        court_id = data.get('court_id', 'basketball_a')
-        feedback_data_for_module5 = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
-        
-        module5_data = generate_module5_from_modules(
-            court_id=court_id,
-            crowd_data=crowd_data_for_module5,
-            env_data=env_data_for_module5,
-            feedback_data=feedback_data_for_module5 if feedback_data_for_module5 else None
-        )
-        socketio.emit('DisplayUpdate', module5_data)
-        print(f"[{datetime.now()}] Module 5 data generated from Module 3 data and sent to dashboard")
+    # Every time dashboard data updates, send latest to Module 5
+    court_id = data.get('court_id', 'basketball_a')
+    emit_module5_display_update(court_id=court_id)
+    print(f"[{datetime.now()}] Module 5 updated from Module 3 data")
 
 # --- Legacy Events (for backward compatibility) ---
 @socketio.on('usage_data')
@@ -3341,12 +3463,14 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
     global historical_data
     historical_data = load_history()
     history_last_12h = get_crowd_history_last_hours(12)
+    history_last_7d = get_crowd_history_last_days(7)
     
-    # Get hourly pattern from last 12 hrs historical data (calculated server-side)
+    # Hourly pattern for today (last 12 hrs)
     today_hourly = get_today_hourly_pattern(history_last_12h, current_hour, people_count, capacity)
-    
-    # Get weekly pattern from last 12 hrs historical data (calculated server-side)
+    # Weekly pattern (same hour across weekdays, from last 12 hrs)
     week_same_time = get_weekly_pattern(history_last_12h, current_hour, people_count, capacity)
+    # Hourly averages over the last 7 days (for Module 5 "last few days" view)
+    hourly_avg_last_days = get_hourly_avg_last_days(history_last_7d, current_hour, people_count, capacity)
     
     # Generate alternatives (fewer if current court is busy)
     num_alternatives = 2 if occupancy < 0.7 else 3
@@ -3404,7 +3528,8 @@ def generate_module5_from_modules(court_id, crowd_data=None, env_data=None, feed
         },
         'patterns': {
             'today_hourly': today_hourly,
-            'week_same_time': week_same_time
+            'week_same_time': week_same_time,
+            'hourly_avg_last_days': hourly_avg_last_days
         },
         'recommendations': {
             'best_times_today': best_times,
@@ -3842,8 +3967,28 @@ def test_connect():
     except Exception:
         n = '?'
     print(f'[{datetime.now()}] Client Connected: sid={request.sid} (total clients in /: {n})')
-    # Send current data to newly connected client
-    emit('current_data_snapshot', current_data)
+    # Build snapshot with module5 so guest and personnel dashboards display same module data
+    crowd_snap = current_data.get('crowd') or get_latest_crowd_data()
+    env_snap = current_data.get('environment') or get_latest_environment_data()
+    feedback_snap = current_data.get('feedback') if current_data.get('feedback') else get_recent_feedback_data(10)
+    module5_snap = None
+    if crowd_snap or env_snap:
+        module5_snap = generate_module5_from_modules(
+            'basketball_a',
+            crowd_data=crowd_snap,
+            env_data=env_snap,
+            feedback_data=feedback_snap if feedback_snap else None
+        )
+    snapshot = {
+        'crowd': current_data.get('crowd'),
+        'environment': current_data.get('environment'),
+        'feedback': current_data.get('feedback'),
+        'module5': module5_snap,
+        'module3_statistics': get_module3_statistics()
+    }
+    emit('current_data_snapshot', snapshot)
+    # Every time a client (e.g. dashboard) connects, send latest data to Module 5
+    emit_module5_display_update()
     # Send mock mode status
     emit('mock_status', {
         'active': mock_state['active'],
@@ -3924,7 +4069,8 @@ def test_disconnect(reason=None):
             except Exception as e:
                 print(f"[WARNING] Error calculating time since last rating: {e}")
         
-        # Emit status update to set kiosk to idle, but keep all data
+        # Emit status update to set kiosk to idle, but keep all data (include statistics so bar graph persists)
+        stats = get_module3_statistics()
         socketio.emit('feedback_status_update', {
             'module_id': module_id,
             'status': 'idle',
@@ -3934,7 +4080,8 @@ def test_disconnect(reason=None):
             'timestamp': utc_iso(),
             'last_rating_timestamp': module3_state['last_rating_timestamp'],
             'latest_rating': module3_state['latest_rating'],
-            'time_since_last_rating': time_since_last_rating
+            'time_since_last_rating': time_since_last_rating,
+            'statistics': stats
         })
         print(f"[{datetime.now()}] Module 3 (feedback) disconnected: {module_id} - Status set to idle")
 
