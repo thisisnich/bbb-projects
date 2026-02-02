@@ -635,9 +635,9 @@ def update_oled_display(view, data):
         # Pass scroll offset for scrolling views (today pattern and alternatives)
         scroll_offset = 0
         if view == 'history_today':
-            # Calculate scroll offset same way as in show_today_pattern
+            # Prefer hourly averages over last 7 days (server sends hourly_avg_last_days); fallback to today_hourly
             patterns = data.get('patterns', {})
-            hourly = patterns.get('today_hourly', [])
+            hourly = patterns.get('hourly_avg_last_days') or patterns.get('today_hourly', [])
             pot_value, _ = read_potentiometer()
             max_items = len(hourly)
             max_scroll = max(0, max_items - 3)
@@ -748,11 +748,13 @@ def show_current_status(data):
         """)
 
 def show_today_pattern(data):
-        """Display View 2A: Today's Pattern (scrollable)"""
+        """Display View 2A: Hourly pattern - shows hourly averages over last 7 days (or today if unavailable)"""
         global Display, ImageObj, Draw, Font
         
         patterns = data.get('patterns', {})
-        hourly = patterns.get('today_hourly', [])
+        # Prefer 7-day hourly averages; fallback to today's hourly
+        hourly = patterns.get('hourly_avg_last_days') or patterns.get('today_hourly', [])
+        use_7d_label = 'hourly_avg_last_days' in patterns  # Show "7D AVG" when server sends this key
         
         # Calculate scroll offset from potentiometer (0.0-1.0 maps to 0 to max_scroll)
         pot_value, raw_pot = read_potentiometer()
@@ -771,11 +773,11 @@ def show_today_pattern(data):
                 Draw = ImageDraw.Draw(ImageObj)
                 Draw.rectangle((0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1), outline=0, fill=0)
                 
-                # Line 1: Title with scroll indicator
+                # Line 1: Title - "7D AVG" when showing hourly avg last 7 days, else "TODAY"
                 if max_scroll > 0:
-                    scroll_indicator = f"TODAY [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
+                    scroll_indicator = f"{'7D AVG' if use_7d_label else 'TODAY'} [{scroll_offset+1}-{min(scroll_offset+3, max_items)}/{max_items}]"
                 else:
-                    scroll_indicator = "TODAY"
+                    scroll_indicator = "7D AVG" if use_7d_label else "TODAY"
                 Draw.text((TEXT_X_OFFSET, TEXT_Y_START), scroll_indicator[:16], font=Font, fill=1)
                 
                 # Show 3 hours starting from scroll_offset
@@ -817,9 +819,10 @@ def show_today_pattern(data):
         best_times = recommendations.get('best_times_today', [])
         avoid_times = recommendations.get('avoid_times', [])
         
-        # Build pattern display from actual hourly data
+        # Build pattern display from actual hourly data (7-day avg or today)
         pattern_lines = []
         current_hour = datetime.now().hour
+        label = "7-day avg" if use_7d_label else "today"
         for hour_data in hourly[:8]:  # Show first 8 hours
             hour_24 = hour_data.get('hour', 0)
             occ = hour_data.get('occupancy', 0)
@@ -864,7 +867,7 @@ def show_today_pattern(data):
         
         print(f"""
         ┌─────────────────────┐
-        │ TODAY'S PATTERN     │
+        │ HOURLY ({label.upper():^8})     │
         │ ═══════════════════ │
         │                     │
 {pattern_display}
@@ -1318,7 +1321,7 @@ def show_matrix_status(data):
         print(f"[LEDMATRIX] Error showing status: {e}")
 
 def show_matrix_today_pattern(data, scroll_offset=0):
-    """Display hourly occupancy pattern on 8x8 matrix for Today view
+    """Display hourly occupancy pattern on 8x8 matrix (7-day avg or today).
     
     Args:
         data: Display data containing patterns
@@ -1330,7 +1333,7 @@ def show_matrix_today_pattern(data, scroll_offset=0):
     
     try:
         patterns = data.get('patterns', {})
-        hourly = patterns.get('today_hourly', [])
+        hourly = patterns.get('hourly_avg_last_days') or patterns.get('today_hourly', [])
         
         # Show 8 hours as 8 vertical bars (one column per hour)
         # Each bar height represents occupancy (0-100%)
