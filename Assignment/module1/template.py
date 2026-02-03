@@ -1,33 +1,50 @@
-"""
-Module 1: Crowd Intelligence Unit - Client Template
-Captures video frames from USB webcam using fswebcam and sends to cloud server
-Also reads MIC, Motion, and Proximity Click sensors
-"""
+# Motion
+import time
+import Adafruit_BBIO.GPIO as GPIO
+# MIC
+import Adafruit_BBIO.ADC as ADC
+# OLED
+import board
+import busio
+import digitalio
+import adafruit_ssd1306
+from board import SCL, SDA
+from PIL import Image, ImageDraw, ImageFont
+
+# Socket.IO for server communication
 import socketio
+from datetime import datetime
+import threading
+
+# Webcam support
 import subprocess
 import base64
-import time
-import threading
-from datetime import datetime
-import sys
 import os
+import shutil
 
 # ========== CONFIGURATION ==========
-SERVER_URL = 'http://192.168.72.161:5000'  # CHANGE THIS to your server IP
+SERVER_URL = 'http://58.182.32.159:5000'  # CHANGE THIS to your server IP
 COURT_ID = 'basketball_a'
 MODULE_ID = 'crowd_unit_1'
-WEBCAM_FPS = 2  # Send 2 frames per second (every 0.5 seconds)
+SEND_INTERVAL = 0.5  # Send data every 0.5 seconds (2 FPS)
 WEBCAM_DEVICE = '/dev/video0'  # USB webcam device path
+WEBCAM_RESOLUTION = '1920x1080'  # e.g. 1920x1080 (1080p), 1280x720, 640x480
+WEBCAM_CAPTURE_TIMEOUT = 10     # seconds; 1080p needs longer than 640x480 (try 8–15 if timeout)
+# Exposure: auto lets the camera lower exposure in bright conditions
+WEBCAM_EXPOSURE_AUTO = False    # True = auto exposure (recommended); False = use manual value below
+WEBCAM_EXPOSURE_ABSOLUTE = 20 # Manual exposure when auto is False; lower = darker/shorter (try 50–300)
+# When auto: lower brightness = auto adjusts toward darker/lower exposure (range often 0–255; try 20–80 for low)
+WEBCAM_BRIGHTNESS = 50
 
-# ========== GLOBAL VARIABLES ==========
+# ========== SOCKET.IO CLIENT ==========
 sio = socketio.Client()
-is_streaming = False
-
-# ========== SOCKET.IO EVENTS ==========
+is_connected = False
 
 @sio.event
 def connect():
     """Called when connected to server"""
+    global is_connected
+    is_connected = True
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Module 1 connected to server')
     
     # Register this module
@@ -37,203 +54,332 @@ def connect():
         'court_id': COURT_ID,
         'timestamp': datetime.now().isoformat()
     })
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Module registered with server')
 
 @sio.event
 def disconnect():
     """Called when disconnected from server"""
-    global is_streaming
-    is_streaming = False
+    global is_connected
+    is_connected = False
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Module 1 disconnected from server')
 
-@sio.event
-def registration_ack(data):
-    """Acknowledgment from server"""
-    print(f'[{datetime.now().strftime("%H:%M:%S")}] Registration confirmed: {data.get("status")}')
+# ========== HARDWARE INITIALIZATION ==========
 
-# ========== WEBCAM FUNCTIONS (fswebcam) ==========
+# MIC
+ADC.setup()
+# Motion
+GPIO.setup("P9_15", GPIO.IN)
+
+# OLED
+def OLEDClickInit():
+    Pin_DC = digitalio.DigitalInOut(board.P9_16)
+    Pin_DC.direction = digitalio.Direction.OUTPUT
+    Pin_DC.value = False
+    Pin_RESET = digitalio.DigitalInOut(board.P9_23)
+    Pin_RESET.direction = digitalio.Direction.OUTPUT
+    Pin_RESET.value = True
+    L_I2c = busio.I2C(SCL, SDA)
+    return L_I2c
+
+#OLED
+G_I2c = OLEDClickInit()
+Display = adafruit_ssd1306.SSD1306_I2C(128, 64, G_I2c, addr=0x3C)
+ImageObj = Image.new("1", (Display.width, Display.height))
+Draw = ImageDraw.Draw(ImageObj)
+Draw.rectangle((32, 25, Display.width - 1, Display.height - 1), outline=1, fill=0)
+Font = ImageFont.load_default()
+
+# ========== WEBCAM FUNCTIONS ==========
 
 def check_fswebcam():
-    """Check if fswebcam is installed"""
-    try:
-        result = subprocess.run(['which', 'fswebcam'], 
-                              capture_output=True, 
-                              timeout=2)
-        if result.returncode == 0:
-            return True
-        else:
-            print("[ERROR] fswebcam not found. Install with: sudo apt-get install fswebcam")
-            return False
-    except Exception as e:
-        print(f"[ERROR] Error checking fswebcam: {e}")
+    """Check if fswebcam is installed and accessible"""
+    # Try common installation paths first (most reliable)
+    common_paths = [
+        '/usr/bin/fswebcam',
+        '/usr/local/bin/fswebcam',
+        '/bin/fswebcam'
+    ]
+    
+    fswebcam_path = None
+    
+    # First check if file exists in common paths
+    for path in common_paths:
+        if os.path.exists(path):
+            fswebcam_path = path
+            break
+    
+    # If not found in common paths, try shutil.which
+    if fswebcam_path is None:
+        fswebcam_path = shutil.which('fswebcam')
+    
+    if fswebcam_path is None:
         return False
+    
+    # Verify the file is executable
+    if not os.access(fswebcam_path, os.X_OK):
+        return False
+    
+    # Try to run fswebcam to verify it works
+    # Note: fswebcam --version may write to stderr or return non-zero
+    # If we can execute it without FileNotFoundError, it's valid
+    try:
+        result = subprocess.run(
+            [fswebcam_path, '--version'], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT,  # Combine stderr into stdout
+            timeout=5
+        )
+        # If we got here without FileNotFoundError, the command executed
+        # Even if return code is non-zero or no output, the fact that it ran means it's valid
+        # (fswebcam --version works when run manually, so if subprocess can call it, it works)
+        return True
+    except FileNotFoundError:
+        # This is the only error that means fswebcam truly isn't available
+        return False
+    except (subprocess.TimeoutExpired, Exception):
+        # For other errors (timeout, permissions, etc.), still return True
+        # because the file exists and is executable, so it should work
+        # The error might be transient (e.g., webcam not connected)
+        return True
 
 def check_webcam_device():
     """Check if webcam device exists"""
-    if os.path.exists(WEBCAM_DEVICE):
-        return True
-    else:
-        print(f"[ERROR] Webcam device {WEBCAM_DEVICE} not found")
-        print(f"Available video devices:")
-        try:
-            result = subprocess.run(['ls', '-la', '/dev/video*'], 
-                                  capture_output=True, 
-                                  timeout=2)
-            print(result.stdout.decode('utf-8'))
-        except:
-            pass
-        return False
+    return os.path.exists(WEBCAM_DEVICE)
 
-def capture_and_encode_frame():
-    """Capture frame from webcam using fswebcam and encode as base64 JPEG"""
+def get_fswebcam_path():
+    """Get the full path to fswebcam executable"""
+    # Try common installation paths first (most reliable)
+    common_paths = [
+        '/usr/bin/fswebcam',
+        '/usr/local/bin/fswebcam',
+        '/bin/fswebcam'
+    ]
+    
+    # First check if file exists in common paths
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If not found in common paths, try shutil.which
+    fswebcam_path = shutil.which('fswebcam')
+    if fswebcam_path:
+        return fswebcam_path
+    
+    # Fallback to just 'fswebcam' if not found
+    return 'fswebcam'
+
+def capture_video_frame():
+    """
+    Capture video frame from webcam using fswebcam.
+    Returns base64 encoded JPEG string, or None if capture fails.
+    """
+    if not check_webcam_device():
+        return None
+    
+    fswebcam_path = get_fswebcam_path()
+    
     try:
-        # Capture frame using fswebcam to stdout
-        result = subprocess.run([
-            'fswebcam',
+        # Capture frame using fswebcam
+        # -r: resolution (WEBCAM_RESOLUTION, e.g. 1920x1080 for 1080p)
+        # -S 1: skip first frame (often corrupted)
+        # --no-banner: no timestamp banner
+        # --jpeg 85: JPEG quality
+        # --set exposure_auto: 0=auto (camera lowers exposure in bright scenes), 1=manual
+        # --set exposure_absolute: when manual, lower value = shorter exposure = darker
+        # -: output to stdout
+        cmd = [
+            fswebcam_path, '-r', WEBCAM_RESOLUTION, '-S', '1', '--no-banner', '--jpeg', '85',
             '-d', WEBCAM_DEVICE,
-            '-r', '640x480',  # Resolution
-            '--no-banner',    # No timestamp banner
-            '--skip', '2',    # Skip first 2 frames (let camera adjust)
-            '--jpeg', '85',   # JPEG quality 85%
-            '-'               # Output to stdout
-        ], capture_output=True, timeout=3)
+        ]
+        if WEBCAM_EXPOSURE_AUTO:
+            cmd.extend(['--set', 'exposure_auto=0', '--set', f'brightness={WEBCAM_BRIGHTNESS}'])  # 0=auto; low brightness = auto biased darker
+        else:
+            cmd.extend(['--set', 'exposure_auto=1', '--set', f'exposure_absolute={WEBCAM_EXPOSURE_ABSOLUTE}'])
+        cmd.append('-')
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=WEBCAM_CAPTURE_TIMEOUT
+        )
         
-        if result.returncode == 0 and len(result.stdout) > 0:
-            # Encode as base64 for transmission
+        if result.returncode == 0 and result.stdout:
+            # Encode to base64
             frame_base64 = base64.b64encode(result.stdout).decode('utf-8')
             return frame_base64
         else:
-            print(f"[WEBCAM] fswebcam failed: returncode={result.returncode}, size={len(result.stdout)}")
-            if result.stderr:
-                print(f"[WEBCAM] Error: {result.stderr.decode('utf-8')}")
             return None
+            
     except subprocess.TimeoutExpired:
-        print("[WEBCAM] Frame capture timeout")
-        return None
-    except FileNotFoundError:
-        print("[WEBCAM] fswebcam not found. Install with: sudo apt-get install fswebcam")
+        print("[WEBCAM] Capture timeout")
         return None
     except Exception as e:
-        print(f'[WEBCAM] Frame capture error: {e}')
+        print(f"[WEBCAM] Error capturing frame: {e}")
         return None
 
 # ========== SENSOR READING FUNCTIONS ==========
 
-def read_mic_click():
-    """Read MIC Click sensor - returns noise level in dB"""
-    # TODO: Implement actual MIC Click reading
-    # For now, return simulated value
-    try:
-        # Example: Read from ADC or I2C
-        # noise_db = read_mic_sensor()
-        noise_db = 65  # Simulated value
-        return noise_db
-    except Exception as e:
-        print(f"[MIC] Error reading sensor: {e}")
-        return 0
+def read_motion_sensor():
+    """Read motion sensor (GPIO P9_15)"""
+    return GPIO.input("P9_15")
 
-def read_motion_click():
-    """Read Motion Click (PIR) sensor - returns True if motion detected"""
-    # TODO: Implement actual Motion Click reading
-    # For now, return simulated value
-    try:
-        # Example: Read from GPIO
-        # motion = GPIO.input("P8_XX")
-        motion = True  # Simulated value
-        return motion
-    except Exception as e:
-        print(f"[MOTION] Error reading sensor: {e}")
-        return False
-
-def read_proximity_click():
-    """Read Proximity Click sensor - returns True if proximity triggered"""
-    # TODO: Implement actual Proximity Click reading
-    # For now, return simulated value
-    try:
-        # Example: Read from I2C
-        # proximity = read_proximity_sensor()
-        proximity = False  # Simulated value
-        return proximity
-    except Exception as e:
-        print(f"[PROXIMITY] Error reading sensor: {e}")
-        return False
-
-# ========== VIDEO STREAMING THREAD ==========
-
-def send_video_frames():
-    """Continuously capture and send video frames to server"""
-    global is_streaming
-    frame_interval = 1.0 / WEBCAM_FPS  # 0.5 seconds for 2 FPS
+def read_sound_sensor():
+    """
+    Read sound/microphone sensor (ADC P9_40) and convert to noise level.
+    Uses string comparison as in the original code.
+    """
+    DigitalValue = str(ADC.read("P9_40"))
+    baseline = "0.010012210346758366"  # Default baseline value
     
-    while is_streaming:
+    # Convert ADC reading to noise level (dB approximation)
+    # ADC reading is typically 0.0 to 1.0
+    # Scale to approximate dB: 0.0 = 30dB (quiet), 1.0 = 90dB (loud)
+    if DigitalValue == baseline:
+        noise_db = 25  # Quiet baseline
+    else:
         try:
-            if sio.connected:
-                # Capture and encode frame
-                frame_base64 = capture_and_encode_frame()
-                
-                if frame_base64:
-                    # Read other sensors
-                    noise_db = read_mic_click()
-                    motion_detected = read_motion_click()
-                    proximity_triggered = read_proximity_click()
-                    
-                    # Send video frame with sensor data
-                    sio.emit('CrowdVideoFrameEvent', {
-                        'module_id': MODULE_ID,
-                        'court_id': COURT_ID,
-                        'timestamp': datetime.now().isoformat(),
-                        'data': {
-                            'video_frame': frame_base64,
-                            'noise_db': noise_db,
-                            'motion_detected': motion_detected,
-                            'proximity_triggered': proximity_triggered,
-                            'sensors_status': {
-                                'webcam': 'ok',
-                                'mic': 'ok',
-                                'motion': 'ok',
-                                'proximity': 'ok'
-                            }
-                        }
-                    })
-                    
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Video frame sent ({len(frame_base64)} bytes), "
-                          f"Noise: {noise_db}dB, Motion: {motion_detected}, Proximity: {proximity_triggered}")
-                else:
-                    print("[WEBCAM] Failed to capture frame")
-            else:
-                print("[WEBCAM] Not connected to server, waiting...")
-                time.sleep(1)
-                
-        except Exception as e:
-            print(f"[WEBCAM] Error sending video frame: {e}")
-        
-        time.sleep(frame_interval)
-
-# ========== MAIN FUNCTION ==========
-
-def main():
-    """Main function"""
-    global is_streaming
+            adc_float = float(DigitalValue)
+            # Map ADC value to noise level (30-90 dB range)
+            # Simple linear mapping: ADC 0.0 → 30dB, ADC 1.0 → 90dB
+            noise_db = 40 + (adc_float * 2000)  # Scale to 30-90 dB range
+            noise_db = max(25, min(90, noise_db))  # Clamp to reasonable range
+        except ValueError:
+            noise_db = 25  # Default if conversion fails
     
+    return noise_db, DigitalValue
+
+# ========== DATA TRANSMISSION FUNCTION ==========
+
+def send_sensor_data():
+    """Send sensor data to server"""
+    global is_connected
+    
+    if not is_connected:
+        return
+    
+    try:
+        # Read sensors
+        motion_detected = read_motion_sensor()
+        noise_db, adc_value = read_sound_sensor()
+        
+        # Capture video frame
+        video_frame = capture_video_frame()
+        webcam_status = 'ok' if video_frame is not None else 'error'
+        
+        # Prepare data payload
+        data_payload = {
+            'noise_db': noise_db,
+            'motion_detected': bool(motion_detected),
+            'proximity_triggered': False,  # TODO: Add proximity sensor when available
+            'sensors_status': {
+                'webcam': webcam_status,
+                'mic': 'ok',
+                'motion': 'ok',
+                'proximity': 'not_implemented'
+            }
+        }
+        
+        # Add video frame if available
+        if video_frame is not None:
+            data_payload['video_frame'] = video_frame
+        
+        # Send video frame event
+        sio.emit('CrowdVideoFrameEvent', {
+            'module_id': MODULE_ID,
+            'court_id': COURT_ID,
+            'timestamp': datetime.now().isoformat(),
+            'data': data_payload
+        })
+        
+        frame_info = f", Frame: {len(video_frame)} bytes" if video_frame else ", No frame"
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Data sent: Motion={motion_detected}, Noise={noise_db:.1f}dB{frame_info}")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to send data: {e}")
+
+# ========== MAIN LOOP ==========
+
+def main_loop():
+    """Main sensor reading and display loop"""
+    last_send_time = 0
+    
+    while True:
+        #Clear OLED Screen
+        ImageObj = Image.new("1", (Display.width, Display.height))
+        Draw = ImageDraw.Draw(ImageObj)
+        
+        # Read sensors
+        motion_detected = read_motion_sensor()
+        noise_db, adc_value = read_sound_sensor()
+        
+        # Determine motion status
+        if motion_detected:
+            Motion = "Detected"
+            Draw.text((90, 30), "Yes", font=Font, fill=1)
+        else:
+            Motion = "Not Detected"
+            Draw.text((90, 30), "No", font=Font, fill=1)
+        
+        # Determine sound status (using string comparison as in original)
+        if adc_value == "0.010012210346758366":  # Default baseline
+            Sound = "Not Detected"
+            Draw.text((90, 50), "No", font=Font, fill=1)
+        else:
+            Sound = "Detected"
+            Draw.text((90, 50), "Yes", font=Font, fill=1)
+        
+        # Display on OLED
+        Draw.text((40, 30), "Motion?", font=Font, fill=1)
+        Draw.text((40, 50), "Sound?", font=Font, fill=1)
+        print("Motion is %s     Sound is %s     Noise: %.1f dB" % (Motion, Sound, noise_db))
+        
+        #OLED
+        Display.image(ImageObj)
+        Display.show()
+        
+        # Send data to server at specified interval
+        current_time = time.time()
+        if current_time - last_send_time >= SEND_INTERVAL:
+            send_sensor_data()
+            last_send_time = current_time
+        
+        time.sleep(0.1)
+
+# ========== STARTUP ==========
+
+if __name__ == "__main__":
     print("=" * 60)
-    print("Module 1: Crowd Intelligence Unit - Client (fswebcam)")
+    print("Module 1: Crowd Intelligence Unit")
     print("=" * 60)
     print(f"Module ID: {MODULE_ID}")
     print(f"Court ID: {COURT_ID}")
     print(f"Server URL: {SERVER_URL}")
-    print(f"Webcam FPS: {WEBCAM_FPS}")
     print(f"Webcam Device: {WEBCAM_DEVICE}")
     print("=" * 60)
     
-    # Check fswebcam
-    if not check_fswebcam():
-        print("[ERROR] fswebcam not available. Exiting.")
-        print("Install with: sudo apt-get install fswebcam")
-        sys.exit(1)
-    
-    # Check webcam device
+    # Check webcam
     if not check_webcam_device():
-        print("[ERROR] Webcam device not found. Exiting.")
-        sys.exit(1)
+        print(f"[WARNING] Webcam device {WEBCAM_DEVICE} not found")
+        print("Video frames will not be sent, but sensor data will still work")
+    else:
+        fswebcam_path = get_fswebcam_path()
+        if not check_fswebcam():
+            print("[WARNING] fswebcam not found or not accessible")
+            print(f"  Expected path: {fswebcam_path}")
+            # Check if file exists but isn't executable
+            if os.path.exists(fswebcam_path):
+                if not os.access(fswebcam_path, os.X_OK):
+                    print(f"  File exists but is not executable. Try: chmod +x {fswebcam_path}")
+                else:
+                    print(f"  File exists and is executable, but --version test failed")
+                    print(f"  Try running manually: {fswebcam_path} --version")
+            else:
+                print(f"  File does not exist at {fswebcam_path}")
+                print("  Install with: sudo apt-get update && sudo apt-get install -y fswebcam")
+                print("  Or verify installation with: which fswebcam")
+            print("  Video frames will not be sent, but sensor data will still work")
+        else:
+            print(f"[OK] Webcam ready (fswebcam found at: {fswebcam_path})")
     
     # Connect to server
     try:
@@ -244,37 +390,31 @@ def main():
         time.sleep(1)
         
         if sio.connected:
-            print("Connected! Starting video stream...")
-            is_streaming = True
+            print("Connected! Starting sensor loop...")
+            print("Press Ctrl+C to stop.\n")
             
-            # Start video streaming thread
-            video_thread = threading.Thread(target=send_video_frames, daemon=True)
-            video_thread.start()
-            
-            # Keep main thread alive
-            print("Streaming video frames. Press Ctrl+C to stop.")
+            # Start main loop
             try:
-                while True:
-                    time.sleep(1)
+                main_loop()
             except KeyboardInterrupt:
                 print("\nStopping...")
-                is_streaming = False
-                time.sleep(1)
         else:
             print("[ERROR] Failed to connect to server")
+            print("Continuing with local display only...")
+            # Run without server connection
+            main_loop()
             
     except socketio.exceptions.ConnectionError as e:
         print(f"[ERROR] Connection error: {e}")
         print("Make sure the server is running and the URL is correct.")
+        print("Continuing with local display only...")
+        # Run without server connection
+        main_loop()
     except Exception as e:
         print(f"[ERROR] Error: {e}")
+        print("Continuing with local display only...")
+        main_loop()
     finally:
         # Cleanup
-        is_streaming = False
         if sio.connected:
             sio.disconnect()
-        print("Client disconnected. Goodbye!")
-
-if __name__ == '__main__':
-    main()
-

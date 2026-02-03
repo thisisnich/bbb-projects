@@ -199,7 +199,8 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 # Session secret key for authentication
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+# Allow large video frames (1080p JPEG base64 can exceed 1MB default)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*', max_http_buffer_size=10 * 1024 * 1024)
 
 # User credentials (in production, use a database)
 USERS = {
